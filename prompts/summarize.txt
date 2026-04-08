@@ -1,0 +1,1 @@
+Summarize into concise bullet points. Preserve all file names, function names, error messages, commands, and configuration values exactly. Remove redundant discussion. Each bullet: one sentence max.

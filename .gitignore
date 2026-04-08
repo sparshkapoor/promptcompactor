@@ -1,3 +1,7 @@
+# State files (runtime, not committed)
+state/*.md
+!state/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,19 @@
+[project]
+name = "apfel-context"
+version = "0.1.0"
+description = "Free, local context compaction for AI coding agents using Apple's on-device LLM"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
