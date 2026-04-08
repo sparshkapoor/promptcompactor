@@ -39,7 +39,7 @@ class ApfelClient:
         logger.warning(f"Input truncated from {len(text)} to {MAX_INPUT_CHARS} chars")
         return text[:MAX_INPUT_CHARS] + "\n[... input truncated to fit context window ...]"
 
-    def _call(self, prompt_name: str, user_content: str, max_tokens: int = 1024) -> str | None:
+    def _call(self, prompt_name: str, user_content: str, max_tokens: int = RESPONSE_BUDGET) -> str | None:
         """Make a chat completion call to apfel. Returns None on failure."""
         try:
             system_prompt = self._load_prompt(prompt_name)
