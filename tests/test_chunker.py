@@ -70,3 +70,66 @@ def test_single_chunk_returned_for_just_under_limit():
 def test_estimate_tokens():
     text = "a" * 350
     assert estimate_tokens(text) == int(350 / CHARS_PER_TOKEN)
+
+
+def test_single_line_no_spaces_hard_split():
+    """Line with no spaces gets hard-split at char boundary (covers line 21)."""
+    max_tokens = 10
+    max_chars = int(max_tokens * CHARS_PER_TOKEN)
+    # A solid block of characters with no spaces — forces hard cut
+    no_space_line = "x" * (max_chars * 3)
+    chunks = chunk_text(no_space_line, max_tokens=max_tokens)
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert len(chunk) <= max_chars
+
+
+def test_single_paragraph_exceeding_limit_split_on_lines():
+    """One huge paragraph (no double-newlines) gets split on single newlines (covers lines 75-85)."""
+    max_tokens = 50
+    max_chars = int(max_tokens * CHARS_PER_TOKEN)
+    # Build a big paragraph with single-newline separators
+    line = "word " * 20  # ~100 chars per line
+    big_para = "\n".join([line] * 20)  # single newlines, no double
+    chunks = chunk_text(big_para, max_tokens=max_tokens)
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert len(chunk) <= max_chars
+
+
+def test_single_long_line_inside_paragraph_hard_splits():
+    """A single oversized line inside a paragraph triggers _split_long_line (covers lines 75-76)."""
+    max_tokens = 10
+    max_chars = int(max_tokens * CHARS_PER_TOKEN)
+    # One line with no spaces and length > max_chars, inside a paragraph
+    huge_line = "a" * (max_chars * 4)
+    para = f"short header\n{huge_line}"
+    chunks = chunk_text(para, max_tokens=max_tokens)
+    assert len(chunks) > 1
+
+
+def test_ultimate_fallback_on_single_long_paragraph():
+    """Ultimate fallback path (line 97) triggered when no chunks built from paragraphs."""
+    max_tokens = 10
+    max_chars = int(max_tokens * CHARS_PER_TOKEN)
+    # Single paragraph exactly equal to max_chars — estimate_tokens > max_tokens
+    # but paragraph fits in max_chars so current_chunk gets set but chunks stays empty
+    # until the final flush... use a slightly-over-limit single paragraph with no \n\n
+    text = "a " * (max_tokens + 5)  # spaces allow word-boundary splitting via fallback
+    chunks = chunk_text(text, max_tokens=max_tokens)
+    assert len(chunks) >= 1
+
+
+def test_unicode_text_does_not_crash():
+    """Unicode characters (emoji, CJK) don't cause errors."""
+    unicode_text = "Hello 🌍 世界 こんにちは " * 100
+    chunks = chunk_text(unicode_text)
+    assert isinstance(chunks, list)
+
+
+def test_large_text_reasonable_chunk_count():
+    """100K+ character text produces a reasonable (non-zero) chunk count."""
+    big_text = "The quick brown fox jumps over the lazy dog. " * 2500  # ~112500 chars
+    chunks = chunk_text(big_text)
+    assert len(chunks) >= 1
+    assert len(chunks) < 1000  # sanity upper bound
