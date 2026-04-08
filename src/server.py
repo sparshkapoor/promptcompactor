@@ -11,7 +11,7 @@ logger = logging.getLogger("apfel-context")
 
 from fastmcp import FastMCP
 from .apfel_client import ApfelClient
-from .state_manager import StateManager
+from .state_manager import StateManager, VALID_TYPES
 from .chunker import chunk_text
 from .health import check_apfel_health
 
@@ -51,6 +51,9 @@ def log_event(event_type: str, content: str) -> str:
             event_type = _apfel.classify(content)
         else:
             event_type = "progress"
+    if event_type not in VALID_TYPES:
+        logger.warning(f"Invalid event_type '{event_type}', defaulting to 'progress'")
+        event_type = "progress"
     _state.append(event_type, content.strip())
     return f"Logged to {event_type}.md"
 
@@ -102,7 +105,7 @@ def generate_handoff(token_budget: int = 2000) -> str:
 @mcp.tool
 def get_context() -> str:
     """Read all current project state files.
-    Returns contents of progress.md, bugs.md, decisions.md, and architecture.md.
+    Returns contents of progress.md, bug.md, decision.md, and architecture.md.
     No LLM call required."""
     return _state.read_all()
 

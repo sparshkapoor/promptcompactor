@@ -147,3 +147,44 @@ def test_get_context_reads_state(mock_singletons):
     result = get_context()
     mock_state.read_all.assert_called_once()
     assert "## Progress" in result
+
+
+def test_summarize_history_single_chunk(mock_singletons):
+    """Summarize with text that fits in exactly one chunk should call summarize once."""
+    from src.server import summarize_history
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.summarize.return_value = "single summary"
+    short_turns = "word " * 10  # Well under 2500-token budget
+    result = summarize_history(short_turns)
+    mock_apfel.summarize.assert_called_once()
+    assert result == "single summary"
+
+
+def test_generate_handoff_zero_token_budget_with_apfel(mock_singletons):
+    """token_budget=0 should still call summarize when apfel is available."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_state.read_all.return_value = "## Progress\n- did stuff\n"
+    mock_apfel.summarize.return_value = "super compact"
+    result = generate_handoff(token_budget=0)
+    mock_apfel.summarize.assert_called_once()
+    assert result == "super compact"
+
+
+def test_generate_handoff_zero_token_budget_apfel_down(mock_singletons):
+    """token_budget=0 with apfel down should truncate to empty + marker, not crash."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_health.return_value = False
+    mock_state.read_all.return_value = "## Progress\n- did stuff\n"
+    result = generate_handoff(token_budget=0)
+    assert "truncated" in result
+
+
+def test_log_event_empty_event_type_defaults_to_progress(mock_singletons):
+    """event_type='' should be sanitized to 'progress' via _validate_type."""
+    from src.server import log_event
+    mock_apfel, mock_state, mock_health = mock_singletons
+    result = log_event("", "Some content")
+    mock_state.append.assert_called_once_with("progress", "Some content")
+    assert "progress.md" in result

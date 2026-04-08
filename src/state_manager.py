@@ -34,7 +34,7 @@ class StateManager:
         safe_type = self._validate_type(event_type)
         filepath = (self.state_dir / f"{safe_type}.md").resolve()
         # Security: verify the resolved path is still inside state_dir
-        if not str(filepath).startswith(str(self.state_dir)):
+        if not filepath.is_relative_to(self.state_dir):
             raise ValueError(f"Path traversal detected: {filepath}")
         return filepath
 
@@ -60,10 +60,14 @@ class StateManager:
         logger.info(f"Logged to {filepath.name}: {safe_content[:80]}...")
 
     def read(self, event_type: str) -> str:
-        """Read a state file. Returns empty string if not found."""
+        """Read a state file. Returns empty string if not found or unreadable."""
         filepath = self._get_path(event_type)
         if filepath.exists():
-            return filepath.read_text(encoding="utf-8")
+            try:
+                return filepath.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                logger.error(f"Non-UTF-8 bytes in {filepath.name}; returning empty string")
+                return ""
         return ""
 
     def read_all(self) -> str:
