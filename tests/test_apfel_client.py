@@ -117,3 +117,11 @@ def test_classify_strips_trailing_period(client):
                       return_value=_make_completion("bug.")):
         result = client.classify("some bug description")
     assert result == "bug"
+
+
+def test_prompts_directory_missing_raises_file_not_found(tmp_path):
+    """If the prompts directory is missing, _load_prompt should raise FileNotFoundError."""
+    client = ApfelClient()
+    client.prompts_dir = tmp_path / "nonexistent_prompts"
+    with pytest.raises(FileNotFoundError):
+        client._load_prompt("compress")

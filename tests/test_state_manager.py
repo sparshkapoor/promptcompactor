@@ -114,12 +114,3 @@ def test_read_returns_empty_for_non_utf8_file(tmp_path):
     bad_file.write_bytes(b"valid prefix \xff\xfe invalid bytes")
     result = sm.read("progress")
     assert result == ""
-
-
-def test_prompts_directory_missing_raises_file_not_found(tmp_path):
-    """If the prompts directory is missing, _load_prompt should raise FileNotFoundError."""
-    from src.apfel_client import ApfelClient
-    client = ApfelClient()
-    client.prompts_dir = tmp_path / "nonexistent_prompts"
-    with pytest.raises(FileNotFoundError):
-        client._load_prompt("compress")
