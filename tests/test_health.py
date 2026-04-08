@@ -1,6 +1,7 @@
 """Tests for src/health.py"""
 import time
 import pytest
+from unittest.mock import MagicMock, patch
 import src.health as health_module
 from src.health import check_apfel_health, CACHE_SECONDS
 
@@ -52,3 +53,25 @@ def test_default_base_url_is_localhost_11434():
     # Should fail gracefully (no server running on 11434 in CI)
     result = check_apfel_health()
     assert isinstance(result, bool)
+
+
+def test_returns_true_when_server_responds_200(monkeypatch):
+    """Returns True when server responds with HTTP 200 (covers line 25)."""
+    reset_cache()
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        result = check_apfel_health(base_url="http://localhost:11434")
+    assert result is True
+
+
+def test_returns_false_on_timeout(monkeypatch):
+    """Returns False when urllib raises TimeoutError."""
+    reset_cache()
+    with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        result = check_apfel_health(base_url="http://localhost:11434")
+    assert result is False
