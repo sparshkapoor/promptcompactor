@@ -147,3 +147,27 @@ def test_get_context_reads_state(mock_singletons):
     result = get_context()
     mock_state.read_all.assert_called_once()
     assert "## Progress" in result
+
+
+def test_summarize_history_falls_back_per_chunk_when_summarize_empty(mock_singletons):
+    """When summarize() returns empty string, fallback appends chunk[:500] + ' [...]' (covers line 78)."""
+    from src.server import summarize_history
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.summarize.return_value = ""
+    result = summarize_history("Some conversation turns here.")
+    assert "[...]" in result
+
+
+def test_generate_handoff_truncates_when_apfel_down_large_state(mock_singletons):
+    """generate_handoff truncates to char_budget when apfel is down and state is large (covers lines 97-98)."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    token_budget = 100
+    # 100 tokens * 4 chars = 400 chars; use 600 chars to exceed budget
+    large_state = "y" * 600
+    mock_state.read_all.return_value = large_state
+    mock_health.return_value = False
+    result = generate_handoff(token_budget=token_budget)
+    assert "truncated" in result
+    char_budget = token_budget * 4
+    assert result.startswith(large_state[:char_budget])

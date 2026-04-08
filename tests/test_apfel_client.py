@@ -117,3 +117,45 @@ def test_classify_strips_trailing_period(client):
                       return_value=_make_completion("bug.")):
         result = client.classify("some bug description")
     assert result == "bug"
+
+
+def test_call_propagates_file_not_found(client):
+    """_call re-raises FileNotFoundError when prompt file is missing (covers line 65)."""
+    # Remove the compress.txt prompt so _load_prompt raises FileNotFoundError
+    (client.prompts_dir / "compress.txt").unlink()
+    with pytest.raises(FileNotFoundError):
+        client._call("compress", "some input")
+
+
+def test_compress_returns_original_on_none_response(client):
+    """compress() returns original when API returns None content."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion(None)):
+        original = "original text that should come back"
+        result = client.compress(original)
+    assert result == original
+
+
+def test_load_prompt_reads_correct_content(client):
+    """_load_prompt returns file content stripped of whitespace."""
+    (client.prompts_dir / "compress.txt").write_text("  my prompt content  ")
+    result = client._load_prompt("compress")
+    assert result == "my prompt content"
+
+
+def test_summarize_returns_truncated_original_when_api_returns_none(client):
+    """summarize() falls back to truncation when API returns None."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion(None)):
+        long_text = "a" * 1000
+        result = client.summarize(long_text)
+    assert "summarization failed" in result
+    assert result.startswith(long_text[:500])
+
+
+def test_classify_normalizes_to_lowercase(client):
+    """classify() normalizes response to lowercase before comparing."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("BUG")):
+        result = client.classify("some bug")
+    assert result == "bug"
