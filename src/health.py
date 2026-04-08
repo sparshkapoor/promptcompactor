@@ -1,0 +1,31 @@
+import logging
+import time
+import urllib.request
+import urllib.error
+
+logger = logging.getLogger("apfel-context.health")
+
+_last_check: float = 0.0
+_last_result: bool = False
+CACHE_SECONDS = 10.0  # Don't check more often than every 10s
+
+
+def check_apfel_health(base_url: str = "http://localhost:11434") -> bool:
+    """Check if apfel server is running and healthy.
+    Caches result for CACHE_SECONDS to avoid excessive requests."""
+    global _last_check, _last_result
+
+    now = time.monotonic()
+    if now - _last_check < CACHE_SECONDS:
+        return _last_result
+
+    try:
+        req = urllib.request.Request(f"{base_url}/health", method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            _last_result = resp.status == 200
+    except (urllib.error.URLError, OSError, TimeoutError):
+        _last_result = False
+        logger.warning("apfel health check failed — server may not be running")
+
+    _last_check = now
+    return _last_result

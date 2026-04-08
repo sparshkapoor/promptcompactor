@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "apfel-context": {
+      "command": "python",
+      "args": ["-m", "src.server"]
+    }
+  }
+}

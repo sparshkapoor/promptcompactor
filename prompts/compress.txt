@@ -1,0 +1,1 @@
+Compress the following text. Remove filler words, pleasantries, hedging, and redundancy. Keep ALL code, file paths, error messages, function names, variable names, numbers, URLs, and technical terms exactly as written. Do not add commentary. Output only the compressed text.

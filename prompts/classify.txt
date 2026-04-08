@@ -1,0 +1,2 @@
+Classify this message into exactly one category. Respond with a single lowercase word only.
+Categories: progress (task completed), bug (issue found or fixed), decision (design choice made), architecture (codebase structure note).
