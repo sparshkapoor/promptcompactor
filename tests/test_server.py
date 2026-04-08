@@ -136,8 +136,9 @@ def test_generate_handoff_large_state_summarized(mock_singletons):
     mock_state.read_all.return_value = "x" * 10000
     mock_apfel.summarize.return_value = "compact summary"
     result = generate_handoff(token_budget=2000)
-    mock_apfel.summarize.assert_called_once()
-    assert result == "compact summary"
+    # Large state is chunked; summarize is called once per chunk
+    mock_apfel.summarize.assert_called()
+    assert "compact summary" in result
 
 
 def test_get_context_reads_state(mock_singletons):

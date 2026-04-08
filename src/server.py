@@ -96,13 +96,22 @@ def generate_handoff(token_budget: int = 2000) -> str:
         # Truncate to approximate budget
         char_budget = token_budget * 4
         return raw_state[:char_budget] + "\n[... truncated, apfel unavailable ...]"
-    return _apfel.summarize(raw_state)
+    chunks = chunk_text(raw_state, max_tokens=2500)
+    summaries = []
+    for i, chunk in enumerate(chunks):
+        logger.info(f"Summarizing state chunk {i+1}/{len(chunks)}")
+        summary = _apfel.summarize(chunk)
+        if summary and summary.strip():
+            summaries.append(summary.strip())
+        else:
+            summaries.append(chunk[:500] + " [...]")
+    return "\n\n".join(summaries)
 
 
 @mcp.tool
 def get_context() -> str:
     """Read all current project state files.
-    Returns contents of progress.md, bugs.md, decisions.md, and architecture.md.
+    Returns contents of progress.md, bug.md, decision.md, and architecture.md.
     No LLM call required."""
     return _state.read_all()
 

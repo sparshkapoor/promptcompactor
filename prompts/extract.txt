@@ -1,1 +1,0 @@
-Extract key technical facts, one per line. Include: file paths, function names, config values, error messages, decisions, and dependencies. Omit opinions and discussion.
