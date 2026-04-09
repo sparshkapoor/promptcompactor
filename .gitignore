@@ -2,6 +2,8 @@
 state/*.md
 !state/.gitkeep
 
+# .claude/ is committed — contains plan, instructions, and progress for this project
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

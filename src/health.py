@@ -19,13 +19,19 @@ def check_apfel_health(base_url: str = "http://localhost:11434") -> bool:
     if now - _last_check < CACHE_SECONDS:
         return _last_result
 
-    try:
-        req = urllib.request.Request(f"{base_url}/health", method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            _last_result = resp.status == 200
-    except (urllib.error.URLError, OSError, TimeoutError):
-        _last_result = False
-        logger.warning("apfel health check failed — server may not be running")
+    # Try /health first (apfel server), fall back to / (Ollama)
+    for path in ["/health", "/"]:
+        try:
+            req = urllib.request.Request(f"{base_url}{path}", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    _last_result = True
+                    _last_check = now
+                    return True
+        except (urllib.error.URLError, OSError, TimeoutError):
+            continue
 
+    _last_result = False
     _last_check = now
-    return _last_result
+    logger.warning("apfel health check failed — server may not be running")
+    return False

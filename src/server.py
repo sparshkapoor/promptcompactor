@@ -10,7 +10,7 @@ logging.basicConfig(
 logger = logging.getLogger("apfel-context")
 
 from fastmcp import FastMCP
-from .apfel_client import ApfelClient
+from .apfel_client import ApfelClient, MAX_INPUT_TOKENS
 from .state_manager import StateManager, VALID_TYPES
 from .chunker import chunk_text
 from .health import check_apfel_health
@@ -65,11 +65,11 @@ def summarize_history(turns: str) -> str:
     Returns compressed summary preserving technical details.
     Falls back to truncation if apfel is unavailable."""
     if not turns or not turns.strip():
-        return ""
+        return "Error: no conversation turns provided."
     if not check_apfel_health():
         logger.warning("apfel unavailable, truncating instead of summarizing")
-        return turns[:2000] + "\n[... truncated, apfel unavailable ...]"
-    chunks = chunk_text(turns, max_tokens=2500)
+        return turns[:2000] + "\n[... truncated, apfel unavailable ...]"  # 2000 chars ~500 tokens
+    chunks = chunk_text(turns, max_tokens=MAX_INPUT_TOKENS)
     summaries = []
     for i, chunk in enumerate(chunks):
         logger.info(f"Summarizing chunk {i+1}/{len(chunks)}")
@@ -92,7 +92,7 @@ def generate_handoff(token_budget: int = 2000) -> str:
     if not raw_state or raw_state == "No state files yet.":
         return "No project state recorded yet."
     # Rough check: if state is small enough, return as-is
-    estimated_tokens = len(raw_state) // 4
+    estimated_tokens = len(raw_state) // 4  # ~4 chars per token
     if estimated_tokens <= token_budget:
         return raw_state
     if not check_apfel_health():
@@ -100,6 +100,35 @@ def generate_handoff(token_budget: int = 2000) -> str:
         char_budget = token_budget * 4
         return raw_state[:char_budget] + "\n[... truncated, apfel unavailable ...]"
     return _apfel.summarize(raw_state)
+
+
+@mcp.tool
+def set_model(model: str, base_url: str = "") -> str:
+    """Switch the active model and/or backend at runtime without restarting the server.
+    model: model name (e.g. 'gemma4:e4b', 'apple-foundationmodel').
+    base_url: optional OpenAI-compatible base URL (defaults to current URL if omitted).
+    Returns confirmation with old and new values."""
+    from .apfel_client import DEFAULT_BASE_URL
+    old_model = _apfel.model
+    old_url = _apfel._base_url
+    new_url = base_url or old_url
+    _apfel.reconfigure(model, new_url)
+    logger.info(f"Switched model: '{old_model}' → '{model}', base_url: '{old_url}' → '{new_url}'")
+    return f"Model: {old_model} → {model}\nBase URL: {old_url} → {new_url}"
+
+
+@mcp.tool
+def get_info() -> str:
+    """Return current server configuration: active model, base URL, and health status.
+    Use this to verify which model (Gemma 4, apfel, etc.) is handling requests."""
+    from .apfel_client import DEFAULT_BASE_URL
+    healthy = check_apfel_health()
+    return (
+        f"Model: {_apfel.model}\n"
+        f"Base URL: {DEFAULT_BASE_URL}\n"
+        f"Server healthy: {healthy}\n"
+        f"(Override with APFEL_MODEL or APFEL_BASE_URL env vars)"
+    )
 
 
 @mcp.tool

@@ -2,7 +2,11 @@
   "mcpServers": {
     "apfel-context": {
       "command": "python",
-      "args": ["-m", "src.server"]
+      "args": ["-m", "src.server"],
+      "env": {
+        "APFEL_MODEL": "gemma4:e4b",
+        "APFEL_BASE_URL": "http://127.0.0.1:11434/v1"
+      }
     }
   }
 }

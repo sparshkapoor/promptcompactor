@@ -87,10 +87,11 @@ def test_log_event_auto_falls_back_when_apfel_down(mock_singletons):
     assert "progress.md" in result
 
 
-def test_summarize_history_empty_returns_empty(mock_singletons):
+def test_summarize_history_empty_returns_error(mock_singletons):
     from src.server import summarize_history
     result = summarize_history("")
-    assert result == ""
+    assert "Error" in result
+    assert result != ""
 
 
 def test_summarize_history_truncates_when_apfel_down(mock_singletons):

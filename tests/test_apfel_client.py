@@ -2,7 +2,10 @@
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from pathlib import Path
-from src.apfel_client import ApfelClient, VALID_CATEGORIES, DEFAULT_CATEGORY
+from src.apfel_client import (
+    ApfelClient, VALID_CATEGORIES, DEFAULT_CATEGORY,
+    DEFAULT_MODEL, MAX_INPUT_TOKENS,
+)
 
 
 @pytest.fixture
@@ -159,3 +162,37 @@ def test_classify_normalizes_to_lowercase(client):
                       return_value=_make_completion("BUG")):
         result = client.classify("some bug")
     assert result == "bug"
+
+
+def test_default_model_is_gemma4():
+    """DEFAULT_MODEL must be gemma4:e4b — regression guard against silent reverts."""
+    assert DEFAULT_MODEL == "gemma4:e4b"
+
+
+def test_max_input_tokens_is_100k():
+    """MAX_INPUT_TOKENS must be 100_000 — regression guard for Gemma 4 context window."""
+    assert MAX_INPUT_TOKENS == 100_000
+
+
+def test_custom_model_passed_to_api(tmp_path):
+    """model= param in __init__ must flow through to the API call."""
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "compress.txt").write_text("compress prompt")
+
+    c = ApfelClient(model="apple-foundationmodel")
+    c.prompts_dir = prompts_dir
+
+    with patch.object(c.client.chat.completions, "create",
+                      return_value=_make_completion("result")) as mock_create:
+        c.compress("some text to compress here with enough words")
+    call_kwargs = mock_create.call_args
+    assert call_kwargs.kwargs["model"] == "apple-foundationmodel"
+
+
+def test_default_model_used_in_api_call(client):
+    """ApfelClient() with no model arg must call the API with DEFAULT_MODEL."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("result")) as mock_create:
+        client.compress("some text to compress here with enough words")
+    assert mock_create.call_args.kwargs["model"] == DEFAULT_MODEL

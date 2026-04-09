@@ -1,4 +1,5 @@
 import logging
+import os
 from openai import OpenAI
 from pathlib import Path
 
@@ -8,22 +9,50 @@ logger = logging.getLogger("apfel-context.client")
 VALID_CATEGORIES = frozenset({"progress", "bug", "decision", "architecture"})
 DEFAULT_CATEGORY = "progress"
 
-# Token budget constants for 4096 total context
+# Default model — overridable via APFEL_MODEL env var
+# e.g. APFEL_MODEL=apple-foundationmodel for apfel, APFEL_MODEL=gemma4:26b for the larger variant
+DEFAULT_MODEL = os.environ.get("APFEL_MODEL", "gemma4:e4b")
+DEFAULT_BASE_URL = os.environ.get("APFEL_BASE_URL", "http://localhost:11434/v1")
+
+# Token budget constants for Gemma 4's 128K context window.
+# These are conservative limits; Gemma 4 can handle far more, but we cap
+# input to avoid runaway memory use on large pastes.
 SYSTEM_PROMPT_BUDGET = 300
-RESPONSE_BUDGET = 1000
-MAX_INPUT_TOKENS = 2500
+RESPONSE_BUDGET = 2000
+MAX_INPUT_TOKENS = 100_000
 MAX_INPUT_CHARS = MAX_INPUT_TOKENS * 4
+DEFAULT_TEMPERATURE = 0.3
+DEFAULT_MAX_RETRIES = 2
+SUMMARY_FALLBACK_CHARS = 500
 
 
 class ApfelClient:
-    def __init__(self, base_url: str = "http://localhost:11434/v1", timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        model: str = DEFAULT_MODEL,
+        timeout: float = 30.0,
+    ):
+        self._timeout = timeout
+        self.model = model
+        self.prompts_dir = Path(__file__).parent.parent / "prompts"
+        self._init_client(base_url)
+
+    def _init_client(self, base_url: str) -> None:
+        self._base_url = base_url
         self.client = OpenAI(
             base_url=base_url,
-            api_key="unused",
-            timeout=timeout,
-            max_retries=2
+            api_key="unused",  # Ollama/apfel don't require auth; SDK requires a non-empty value
+            timeout=self._timeout,
+            max_retries=DEFAULT_MAX_RETRIES,
         )
-        self.prompts_dir = Path(__file__).parent.parent / "prompts"
+
+    def reconfigure(self, model: str, base_url: str) -> None:
+        """Switch model and/or base URL at runtime without restarting."""
+        self.model = model
+        if base_url != self._base_url:
+            self._init_client(base_url)
+            logger.info(f"Client reinitialized with base_url={base_url}")
 
     def _load_prompt(self, name: str) -> str:
         filepath = self.prompts_dir / f"{name}.txt"
@@ -33,38 +62,38 @@ class ApfelClient:
         return filepath.read_text().strip()
 
     def _truncate_input(self, text: str) -> str:
-        """Truncate input to fit within apfel's context window."""
+        """Truncate input to MAX_INPUT_CHARS as a safety ceiling. Logs a warning if triggered."""
         if len(text) <= MAX_INPUT_CHARS:
             return text
         logger.warning(f"Input truncated from {len(text)} to {MAX_INPUT_CHARS} chars")
         return text[:MAX_INPUT_CHARS] + "\n[... input truncated to fit context window ...]"
 
     def _call(self, prompt_name: str, user_content: str, max_tokens: int = RESPONSE_BUDGET) -> str | None:
-        """Make a chat completion call to apfel. Returns None on failure."""
+        """Make a chat completion call to the local model. Returns None on failure."""
         try:
             system_prompt = self._load_prompt(prompt_name)
             truncated = self._truncate_input(user_content)
 
             resp = self.client.chat.completions.create(
-                model="apple-foundationmodel",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": truncated}
                 ],
                 max_tokens=max_tokens,
-                temperature=0.3
+                temperature=DEFAULT_TEMPERATURE,
             )
 
             result = resp.choices[0].message.content
             if result is None:
-                logger.warning(f"apfel returned None for prompt '{prompt_name}' — possible content filter")
+                logger.warning(f"Model returned None for prompt '{prompt_name}' — possible content filter")
                 return None
             return result
 
         except FileNotFoundError:
             raise  # Let missing prompt files propagate
         except Exception as e:
-            logger.error(f"apfel call failed ({prompt_name}): {type(e).__name__}: {e}")
+            logger.error(f"Model call failed ({prompt_name}): {type(e).__name__}: {e}")
             return None
 
     def compress(self, text: str) -> str:
@@ -88,5 +117,5 @@ class ApfelClient:
         result = self._call("summarize", text)
         if result and result.strip():
             return result
-        # Fallback: return first 500 chars
-        return text[:500] + " [... summarization failed, truncated ...]" if len(text) > 500 else text
+        # Fallback: return first SUMMARY_FALLBACK_CHARS chars
+        return text[:SUMMARY_FALLBACK_CHARS] + " [... summarization failed, truncated ...]" if len(text) > SUMMARY_FALLBACK_CHARS else text
