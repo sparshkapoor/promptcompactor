@@ -22,6 +22,17 @@
     <key>KeepAlive</key>
     <true/>
 
+    <!--
+        Keep models in VRAM indefinitely after first use.
+        Default is 5 minutes; -1 means never evict until Ollama restarts.
+        This prevents cold-start delays on every Claude session after a gap.
+    -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OLLAMA_KEEP_ALIVE</key>
+        <string>-1</string>
+    </dict>
+
     <!-- Prevent tight restart loop on repeated crashes -->
     <key>ThrottleInterval</key>
     <integer>5</integer>
