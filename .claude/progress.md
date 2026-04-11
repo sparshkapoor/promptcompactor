@@ -1,5 +1,11 @@
 # Progress Log
 
+## 2026-04-11 (session 5 — continued: gemma4 warm-up pipeline)
+- [DONE] Added `OLLAMA_KEEP_ALIVE=-1` to launchd plist — model stays in VRAM indefinitely after first load
+- [DONE] Added fire-and-forget warm-up curl to `on-session-start.sh` — loads gemma in background in parallel with generate-handoff
+- [DONE] Reloaded launchd plist, verified `OLLAMA_KEEP_ALIVE` active on Ollama process via `launchctl print`
+- [NOTE] plist validated with `plutil -lint` before reload
+
 ## 2026-04-11 (session 5 — bench.py warmup + TTFT + gemma4 context fix)
 - [DONE] Added `--warmup` flag to `tools/bench.py` — fires 1-token dummy call per model, reports cold-start ms separately from TTFT and pure generation ms
 - [DONE] Switched bench.py to streaming completions — TTFT measured as wall-clock time to first content chunk

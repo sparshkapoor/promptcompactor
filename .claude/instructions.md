@@ -2,6 +2,9 @@
 
 ## Code Standards
 
+### Session Hygiene
+- Always update `.claude/progress.md` with a session log entry **before** any `git commit` or `git push`. Never commit without it.
+
 ### DO
 - Log all errors to stderr using the `logging` module, never print()
 - Return the original input as fallback when apfel calls fail — never return empty strings or None from public tool functions. **Exception:** `summarize_history` intentionally truncates to 2000 chars (+ marker) when apfel is unavailable, because returning a potentially massive history verbatim isn't useful.
