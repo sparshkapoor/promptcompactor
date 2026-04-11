@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.apfel-context.server</string>
+
+    <!--
+        Default: Ollama (current backend, gemma4:e4b).
+        For apfel: change to ["/opt/homebrew/bin/apfel", "--serve"]
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/ollama</string>
+        <string>serve</string>
+    </array>
+
+    <!-- Start immediately on login and restart if it crashes -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Prevent tight restart loop on repeated crashes -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/apfel-context-server.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/apfel-context-server.stderr.log</string>
+</dict>
+</plist>

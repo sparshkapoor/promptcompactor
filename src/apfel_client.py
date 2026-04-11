@@ -1,7 +1,8 @@
 import logging
-import os
 from openai import OpenAI
 from pathlib import Path
+
+from .config import get_backend_config, get_max_input_tokens
 
 logger = logging.getLogger("apfel-context.client")
 
@@ -9,17 +10,14 @@ logger = logging.getLogger("apfel-context.client")
 VALID_CATEGORIES = frozenset({"progress", "bug", "decision", "architecture"})
 DEFAULT_CATEGORY = "progress"
 
-# Default model — overridable via APFEL_MODEL env var
-# e.g. APFEL_MODEL=apple-foundationmodel for apfel, APFEL_MODEL=gemma4:26b for the larger variant
-DEFAULT_MODEL = os.environ.get("APFEL_MODEL", "gemma4:e4b")
-DEFAULT_BASE_URL = os.environ.get("APFEL_BASE_URL", "http://localhost:11434/v1")
+# Resolved at import time — env vars and config.json both handled by get_backend_config()
+_backend = get_backend_config()
+DEFAULT_MODEL = _backend["model"]
+DEFAULT_BASE_URL = _backend["base_url"]
 
-# Token budget constants for Gemma 4's 128K context window.
-# These are conservative limits; Gemma 4 can handle far more, but we cap
-# input to avoid runaway memory use on large pastes.
-SYSTEM_PROMPT_BUDGET = 300
+# Token budget: driven by config.json (max_context_tokens minus budget slices)
 RESPONSE_BUDGET = 2000
-MAX_INPUT_TOKENS = 100_000
+MAX_INPUT_TOKENS = get_max_input_tokens()
 MAX_INPUT_CHARS = MAX_INPUT_TOKENS * 4
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_RETRIES = 2

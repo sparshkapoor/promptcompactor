@@ -46,8 +46,26 @@ else
     echo "  claude mcp add apfel-context -- python -m src.server"
 fi
 
+# 8. Make hook scripts executable
+echo "Making hook scripts executable..."
+chmod +x .claude/hooks/*.sh
+
+# 9. Install launchd plist to auto-start the LLM backend on login (optional)
+read -p "Auto-start LLM backend (Ollama) on login? (y/n) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    PLIST_SRC="scripts/com.apfel-context.server.plist"
+    PLIST_DST="$HOME/Library/LaunchAgents/com.apfel-context.server.plist"
+    cp "$PLIST_SRC" "$PLIST_DST"
+    launchctl load "$PLIST_DST"
+    echo "launchd plist installed. Ollama will start automatically on login."
+    echo "Logs: /tmp/apfel-context-server.stdout.log / stderr.log"
+    echo "To uninstall: launchctl unload $PLIST_DST && rm $PLIST_DST"
+fi
+
 echo ""
 echo "=== Setup complete ==="
 echo "1. Restart Claude Code"
 echo "2. Run /mcp to verify apfel-context is connected"
-echo "3. Try: ask Claude Code to use compact_prompt on a verbose message"
+echo "3. Hooks are active — SessionStart will inject state, edits will auto-log"
+echo "4. Try: ask Claude Code to use compact_prompt on a verbose message"

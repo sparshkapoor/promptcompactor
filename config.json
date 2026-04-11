@@ -1,0 +1,19 @@
+{
+  "backend": {
+    "base_url": "http://localhost:11434/v1",
+    "model": "gemma4:e4b",
+    "max_context_tokens": 128000
+  },
+  "automation": {
+    "auto_log_edits": true,
+    "auto_progress_on_stop": true,
+    "auto_inject_context_on_start": true,
+    "compact_on_every_prompt": false,
+    "max_injection_tokens": 400
+  },
+  "token_budget": {
+    "system_prompt": 300,
+    "response_reserve": 1000,
+    "safety_margin": 300
+  }
+}

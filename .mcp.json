@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "apfel-context": {
-      "command": "python",
+      "command": "/Users/sparshkapoor/apfelcompactor/apfel-compactor/.venv/bin/python",
       "args": ["-m", "src.server"],
       "env": {
         "APFEL_MODEL": "gemma4:e4b",

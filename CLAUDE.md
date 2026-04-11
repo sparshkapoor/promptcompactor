@@ -31,8 +31,17 @@ Set env var before starting the MCP server:
 - All file I/O through StateManager, all LLM calls through ApfelClient — no exceptions
 - State files live in state/*.md, rotate at 100KB
 
-## Current Status (2026-04-08)
-- Backend: Gemma 4 E4B via Ollama (swapped from apfel 3B)
+## Compaction Rule
+When the user sends a message longer than ~50 words of prose, silently call `compact_prompt`
+on it before starting work. Use the compressed version as the working prompt.
+Do NOT compact: code blocks, file contents, structured data, numbered lists, or anything
+where precision matters. Preserve those verbatim.
+
+## Current Status (2026-04-11)
+- Backend: Gemma 4 E4B via Ollama — **gemma4:e4b only** (128K ctx, modelfile updated with num_ctx 131072)
+- qwen2.5:1.5b evaluated and rejected: mangles structured data, unacceptable for context compaction
 - Tests: 79/79 passing
-- Pending: implement ApfelClient.extract() or delete extract.txt; fix generate_handoff token_budget being ignored when model is healthy
+- Hooks active: SessionStart injects bounded state digest, PostToolUse logs edits, Stop logs turn marker
+- bench.py: `--warmup` flag separates cold-start / TTFT / generation; uses streaming for TTFT measurement
+- Pending: implement ApfelClient.extract() or delete extract.txt
 - See .claude/progress.md for full log

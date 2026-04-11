@@ -1,4 +1,5 @@
 import logging
+from .config import get_max_input_tokens
 
 logger = logging.getLogger("apfel-context.chunker")
 
@@ -28,21 +29,21 @@ def _split_long_line(line: str, max_chars: int) -> list[str]:
     return pieces
 
 
-def chunk_text(text: str, max_tokens: int = 2500) -> list[str]:
-    """Split text into chunks that fit within apfel's context window.
+def chunk_text(text: str, max_tokens: int | None = None) -> list[str]:
+    """Split text into chunks that fit within the model's context window.
 
     Args:
         text: Input text to split.
-        max_tokens: Max tokens per chunk. Default accounts for:
-            - 4096 total apfel context
-            - ~300 tokens for system prompt
-            - ~1000 tokens for response
-            - ~300 tokens safety margin
-            = ~2500 tokens for input
+        max_tokens: Max tokens per chunk. Defaults to get_max_input_tokens()
+            which is calculated from config.json as:
+            max_context_tokens - system_prompt - response_reserve - safety_margin
 
     Returns:
         List of text chunks, each within the token budget.
     """
+    if max_tokens is None:
+        max_tokens = get_max_input_tokens()
+
     if not text or not text.strip():
         return []
 

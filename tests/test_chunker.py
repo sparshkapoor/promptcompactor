@@ -23,9 +23,10 @@ def test_short_text_stays_single_chunk():
 
 
 def test_long_text_splits_into_multiple_chunks():
-    # Create text that exceeds 2500-token budget (2500 * 3.5 = 8750 chars)
-    long_text = "word " * 5000  # ~25000 chars >> 8750
-    result = chunk_text(long_text)
+    # Pass an explicit small budget so the test is independent of config.json values.
+    # 500 tokens * 3.5 chars/token = 1750 char budget; 25000 chars >> 1750.
+    long_text = "word " * 5000  # ~25000 chars
+    result = chunk_text(long_text, max_tokens=500)
     assert len(result) > 1
 
 

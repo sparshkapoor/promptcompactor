@@ -169,9 +169,11 @@ def test_default_model_is_gemma4():
     assert DEFAULT_MODEL == "gemma4:e4b"
 
 
-def test_max_input_tokens_is_100k():
-    """MAX_INPUT_TOKENS must be 100_000 — regression guard for Gemma 4 context window."""
-    assert MAX_INPUT_TOKENS == 100_000
+def test_max_input_tokens_from_config():
+    """MAX_INPUT_TOKENS must be positive and derived from config (not a stale hardcode)."""
+    from src.config import get_max_input_tokens
+    assert MAX_INPUT_TOKENS > 0
+    assert MAX_INPUT_TOKENS == get_max_input_tokens()
 
 
 def test_custom_model_passed_to_api(tmp_path):
