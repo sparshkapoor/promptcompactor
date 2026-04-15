@@ -110,10 +110,19 @@ class ApfelClient:
         logger.warning(f"Unexpected classification '{cleaned}', defaulting to '{DEFAULT_CATEGORY}'")
         return DEFAULT_CATEGORY
 
-    def summarize(self, text: str) -> str:
-        """Summarize text. Returns truncated original on failure."""
-        result = self._call("summarize", text)
+    def summarize(self, text: str, max_tokens: int = RESPONSE_BUDGET) -> str:
+        """Summarize text. Returns truncated original on failure.
+        max_tokens: cap on LLM response length; use for adaptive budget in generate_handoff."""
+        result = self._call("summarize", text, max_tokens=max_tokens)
         if result and result.strip():
             return result
         # Fallback: return first SUMMARY_FALLBACK_CHARS chars
         return text[:SUMMARY_FALLBACK_CHARS] + " [... summarization failed, truncated ...]" if len(text) > SUMMARY_FALLBACK_CHARS else text
+
+    def summarize_file(self, content: str) -> str:
+        """Generate a one-line description of a file's purpose.
+        Returns the first line of the model's response, or empty string on failure."""
+        result = self._call("file_summary", content, max_tokens=60)
+        if result and result.strip():
+            return result.strip().splitlines()[0].strip()
+        return ""

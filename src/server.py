@@ -10,9 +10,9 @@ logging.basicConfig(
 logger = logging.getLogger("apfel-context")
 
 from fastmcp import FastMCP
-from .apfel_client import ApfelClient, MAX_INPUT_TOKENS
+from .apfel_client import ApfelClient, MAX_INPUT_TOKENS, DEFAULT_BASE_URL
 from .state_manager import StateManager, VALID_TYPES
-from .chunker import chunk_text
+from .chunker import chunk_text, CHARS_PER_TOKEN
 from .health import check_apfel_health
 
 mcp = FastMCP("apfel-context")
@@ -87,19 +87,37 @@ def generate_handoff(token_budget: int = 2000) -> str:
     """Generate a session handoff digest from current state files.
     Use when starting a new session to inject project context.
     token_budget: approximate max tokens for output (default 2000).
+    Narrative state is compressed adaptively; codebase map is always verbatim.
     Returns formatted context digest."""
-    raw_state = _state.read_all()
-    if not raw_state or raw_state == "No state files yet.":
+    narrative = _state.read_narrative()
+    codebase = _state.read_codebase()
+
+    if narrative == "No state files yet." and not codebase:
         return "No project state recorded yet."
-    # Rough check: if state is small enough, return as-is
-    estimated_tokens = len(raw_state) // 4  # ~4 chars per token
-    if estimated_tokens <= token_budget:
-        return raw_state
+
+    def _assemble(narrative_part: str) -> str:
+        parts = []
+        if narrative_part and narrative_part != "No state files yet.":
+            parts.append(narrative_part)
+        if codebase:
+            parts.append(f"## Codebase\n{codebase}")
+        return "\n\n".join(parts) if parts else "No project state recorded yet."
+
+    estimated_narrative = int(len(narrative) / CHARS_PER_TOKEN) if narrative != "No state files yet." else 0
+
+    if estimated_narrative <= token_budget:
+        return _assemble(narrative)
+
     if not check_apfel_health():
-        # Truncate to approximate budget
-        char_budget = token_budget * 4
-        return raw_state[:char_budget] + "\n[... truncated, apfel unavailable ...]"
-    return _apfel.summarize(raw_state)
+        char_budget = int(token_budget * CHARS_PER_TOKEN)
+        truncated = narrative[:char_budget] + "\n[... truncated, apfel unavailable ...]"
+        return _assemble(truncated)
+
+    # Adaptive budget: compress to at most 60% of original, no less than token_budget.
+    # Prevents 90%+ loss when state files are large relative to the budget.
+    target_tokens = max(token_budget, int(estimated_narrative * 0.4))
+    summary = _apfel.summarize(narrative, max_tokens=target_tokens)
+    return _assemble(summary)
 
 
 @mcp.tool
@@ -108,7 +126,6 @@ def set_model(model: str, base_url: str = "") -> str:
     model: model name (e.g. 'gemma4:e4b', 'apple-foundationmodel').
     base_url: optional OpenAI-compatible base URL (defaults to current URL if omitted).
     Returns confirmation with old and new values."""
-    from .apfel_client import DEFAULT_BASE_URL
     old_model = _apfel.model
     old_url = _apfel._base_url
     new_url = base_url or old_url
@@ -121,7 +138,6 @@ def set_model(model: str, base_url: str = "") -> str:
 def get_info() -> str:
     """Return current server configuration: active model, base URL, and health status.
     Use this to verify which model (Gemma 4, apfel, etc.) is handling requests."""
-    from .apfel_client import DEFAULT_BASE_URL
     healthy = check_apfel_health()
     return (
         f"Model: {_apfel.model}\n"

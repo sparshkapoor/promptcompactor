@@ -1,5 +1,42 @@
 # Progress Log
 
+## 2026-04-15 (session 7 — audit + plan.md hardening)
+- [DONE] Full codebase audit against real-world usability: 6 open issues identified and documented in plan.md
+- [DONE] plan.md: corrected tool count (5→7), architecture diagram (apfel→Ollama), status (79→105 tests), added detailed Known Issues with fix guidance
+- [NOTE] Top 3 issues by impact: (1) on-stop.sh Turn completed noise 32% of progress.md, (2) codebase.md has no rotation, (3) no integration test for the MCP path
+- [NOTE] Model loading: Ollama lazy-loads on first call; OLLAMA_KEEP_ALIVE=-1 keeps resident; session-start warm-up curl makes it eager-warm in practice
+
+## 2026-04-15 (session 6 — codebase map + algorithm/concurrency fixes)
+- [DONE] `prompts/file_summary.txt` + `ApfelClient.summarize_file()` — one-line file description
+- [DONE] `StateManager.update_file_summary(path, summary)` — upserts into state/codebase.md
+- [DONE] `hook_runner.py update-file-summary` command + on-edit.sh second async call
+- [DONE] Python file preview: first 60 lines + all class/def signatures (streaming, no full load); 5MB size gate
+- [DONE] File locking: `StateManager._locked()` using fcntl.flock + sidecar .lock file — covers append(), update_file_summary(), and _rotate() TOCTOU
+- [DONE] Token estimate consistency: `CHARS_PER_TOKEN = 4` now single source of truth in chunker.py, imported by server.py and hook_runner.py (was inconsistent 3.5 vs 4)
+- [DONE] Wired `compact_on_every_prompt` config key in cmd_compress_prompt() — true = skip _is_compressible() heuristic, compress everything
+- [DONE] compress-prompt devlog: logs compression events to state/progress.md when `log_prompt_compression: true`
+- [DONE] Fixed set_model()/get_info() — removed redundant local DEFAULT_BASE_URL imports; added 4 tests; 94/94 passing
+- [DONE] generate_handoff: `StateManager.read_narrative()` / `read_codebase(max_entries=50)` — codebase map is now verbatim-truncated (never summarized); narrative is summarized separately
+- [DONE] Adaptive compression budget: `target_tokens = max(token_budget, int(estimated * 0.4))` — prevents 90%+ loss on large state files; applied in both server.py and hook_runner.py
+- [DONE] `ApfelClient.summarize(max_tokens=RESPONSE_BUDGET)` — added optional param so callers can set the LLM response cap per-call
+- [DONE] 105/105 tests passing (added 11 new tests: 3 read_narrative, 6 read_codebase, 3 generate_handoff)
+- [NOTE] state/progress.md is 3966 tokens vs 400-token injection budget — generate_handoff always triggers Gemma summarization at session start
+
+## 2026-04-15 (session 6 — per-file codebase summaries)
+- [DONE] Deleted `prompts/extract.txt` — decided not to implement extract(); use case covered by compress() and Claude's natural log conciseness
+- [DONE] Added `prompts/file_summary.txt` — one-sentence file description prompt
+- [DONE] Added `ApfelClient.summarize_file(content)` — calls file_summary prompt, returns first line or empty string on failure
+- [DONE] Added `StateManager.update_file_summary(path, summary)` — upserts `- \`path\`: summary` line in state/codebase.md
+- [DONE] Updated `StateManager.read_all()` — includes codebase.md section in output
+- [DONE] Added `hook_runner.py update-file-summary <filepath>` command — reads file, calls summarize_file, upserts into codebase map; skips state/, binaries, empty files, unhealthy backend
+- [DONE] Updated `.claude/hooks/on-edit.sh` — second fire-and-forget call to update-file-summary alongside existing log-edit
+- [DONE] Fixed test_apfel_client.py fixture: replaced extract with file_summary in prompt file setup
+- [DONE] Added 11 new tests (4 for summarize_file, 7 for update_file_summary/read_all) — 90/90 passing
+
+## 2026-04-15 (session 6 — extract.txt cleanup)
+- [DONE] Deleted `prompts/extract.txt` — decided not to implement `ApfelClient.extract()`; use case covered by `compress()` + Claude's natural log conciseness; no MCP tool added
+- [DONE] Updated plan.md: removed extract from Known Issues and Planned Enhancements, updated prompt file list to 3 files
+
 ## 2026-04-11 (session 5 — continued: gemma4 warm-up pipeline)
 - [DONE] Added `OLLAMA_KEEP_ALIVE=-1` to launchd plist — model stays in VRAM indefinitely after first load
 - [DONE] Added fire-and-forget warm-up curl to `on-session-start.sh` — loads gemma in background in parallel with generate-handoff

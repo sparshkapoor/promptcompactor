@@ -10,10 +10,11 @@ IMPORTANT: stdout is reserved for hook output that Claude Code reads.
            All logging must go to stderr.
 
 Usage:
-  python scripts/hook_runner.py inject-context      # Read state files raw, output to stdout
-  python scripts/hook_runner.py generate-handoff    # Bounded digest (summarizes if over max_injection_tokens)
-  python scripts/hook_runner.py compress-prompt     # Read prompt JSON from stdin, inject compressed version
+  python scripts/hook_runner.py inject-context           # Read state files raw, output to stdout
+  python scripts/hook_runner.py generate-handoff         # Bounded digest (summarizes if over max_injection_tokens)
+  python scripts/hook_runner.py compress-prompt          # Read prompt JSON from stdin, inject compressed version
   python scripts/hook_runner.py log-edit <filepath>
+  python scripts/hook_runner.py update-file-summary <filepath>
   python scripts/hook_runner.py log-progress <message>
   python scripts/hook_runner.py summarize-turn
 
@@ -39,6 +40,7 @@ logging.basicConfig(
 logger = logging.getLogger("hook_runner")
 
 from src.config import get_backend_config, get_automation_config  # noqa: E402
+from src.chunker import CHARS_PER_TOKEN                           # noqa: E402
 from src.apfel_client import ApfelClient                           # noqa: E402
 from src.state_manager import StateManager                         # noqa: E402
 from src.health import check_apfel_health                          # noqa: E402
@@ -98,8 +100,9 @@ def cmd_generate_handoff() -> None:
     """
     Inject a bounded digest of state files.
 
-    If state fits within max_injection_tokens, print it verbatim.
-    Otherwise summarize via Gemma first, then hard-cap at the budget.
+    Narrative state (progress/bug/decision/architecture) is summarized via Gemma
+    if over budget, using an adaptive target: max(token_budget, estimated * 0.4).
+    Codebase map is always passed verbatim (verbatim-truncated to last 50 entries).
     This keeps session injection O(1) regardless of how large state files grow.
     """
     automation = get_automation_config()
@@ -107,38 +110,56 @@ def cmd_generate_handoff() -> None:
         return
 
     token_budget: int = int(automation.get("max_injection_tokens", 400))
-    char_budget = token_budget * 4  # conservative 4 chars/token
 
     state = _make_state()
-    raw = state.read_all()
+    narrative = state.read_narrative()
+    codebase = state.read_codebase()
 
-    if not raw or raw == "No state files yet.":
+    if (not narrative or narrative == "No state files yet.") and not codebase:
         return
 
-    # Fast path: already small enough
-    estimated = len(raw) // 4
+    def _assemble(narrative_part: str) -> str:
+        parts = []
+        if narrative_part and narrative_part != "No state files yet.":
+            parts.append(narrative_part)
+        if codebase:
+            parts.append(f"## Codebase\n{codebase}")
+        return "\n\n".join(parts)
+
+    # Fast path: narrative already fits within budget
+    estimated = int(len(narrative) / CHARS_PER_TOKEN) if narrative != "No state files yet." else 0
     if estimated <= token_budget:
-        print(raw)
+        result = _assemble(narrative)
+        if result:
+            print(result)
         return
 
-    # State is too large — summarize it
+    # Adaptive budget: compress to at most 60% of original, no less than token_budget.
+    # Prevents 90%+ loss when state files are large relative to the injection budget.
+    target_tokens = max(token_budget, int(estimated * 0.4))
+    target_chars = int(target_tokens * CHARS_PER_TOKEN)
+
     if _is_healthy():
         try:
             client = _make_client()
-            # Pass budget hint in the content so Gemma knows to be concise
-            hint = f"Summarize the following project state in under {token_budget} tokens:\n\n{raw}"
-            summary = client._call("summarize", hint)
+            summary = client.summarize(narrative, max_tokens=target_tokens)
             if summary and summary.strip():
-                # Hard-cap even if Gemma overshot
-                if len(summary) > char_budget:
-                    summary = summary[:char_budget] + "\n[... truncated to injection budget ...]"
-                print(summary)
+                # Hard-cap even if Gemma overshot the adaptive target
+                if len(summary) > target_chars:
+                    summary = summary[:target_chars] + "\n[... truncated to injection budget ...]"
+                result = _assemble(summary)
+                if result:
+                    print(result)
                 return
         except Exception as e:
             logger.warning(f"generate-handoff summarization failed: {type(e).__name__}: {e}")
 
-    # Fallback: truncate raw state to budget
-    print(raw[:char_budget] + "\n[... state truncated to fit injection budget ...]")
+    # Fallback: truncate raw narrative to hard budget, still append codebase verbatim
+    char_budget = int(token_budget * CHARS_PER_TOKEN)
+    truncated = narrative[:char_budget] + "\n[... state truncated to fit injection budget ...]"
+    result = _assemble(truncated)
+    if result:
+        print(result)
 
 
 def cmd_log_edit(filepath: str) -> None:
@@ -180,6 +201,95 @@ def cmd_log_edit(filepath: str) -> None:
         entry = f"Edited {filepath}"
 
     state.append("progress", entry)
+
+
+# File extensions worth summarizing (skip binaries, compiled artifacts, etc.)
+_SUMMARIZABLE_EXTENSIONS = frozenset({
+    ".py", ".sh", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
+    ".js", ".ts", ".html", ".css",
+})
+_MAX_FILE_PREVIEW_CHARS = 3000    # char limit for non-Python previews
+_MAX_FILE_PREVIEW_HEAD = 60      # leading lines always included for .py (module docstring + imports)
+_MAX_SIGNATURES = 80             # max class/def signature lines collected from the rest of .py file
+_MAX_FILE_SIZE_BYTES = 5_000_000  # skip files >5MB (logs, generated assets, minified bundles)
+
+
+def _read_python_preview(f) -> str:
+    """Stream a .py file and return a structural preview for any file size.
+    Reads the first _MAX_FILE_PREVIEW_HEAD lines verbatim (docstring + imports),
+    then scans the rest for class/def signatures only — never loads the full body.
+    """
+    lines = []
+    sig_count = 0
+    for i, line in enumerate(f):
+        if i < _MAX_FILE_PREVIEW_HEAD:
+            lines.append(line)
+        elif sig_count < _MAX_SIGNATURES and (
+            line.startswith("class ") or line.startswith("def ")
+            or line.startswith("    def ") or line.startswith("    class ")
+            or line.startswith("async def ") or line.startswith("    async def ")
+        ):
+            lines.append(line)
+            sig_count += 1
+    return "".join(lines)
+
+
+def cmd_update_file_summary(filepath: str) -> None:
+    """
+    Generate a one-line description of a file and upsert into state/codebase.md.
+    Skips: state/ files (recursion guard), unsupported extensions, missing files,
+    empty files, and when the backend is unreachable.
+    """
+    automation = get_automation_config()
+    if not automation.get("auto_log_edits", True):
+        return
+
+    path = Path(filepath)
+    if not path.exists() or not path.is_file():
+        return
+
+    # Recursion guard: skip anything inside the state/ directory
+    state_dir = (_REPO_ROOT / "state").resolve()
+    try:
+        path.resolve().relative_to(state_dir)
+        return
+    except ValueError:
+        pass
+
+    if path.suffix.lower() not in _SUMMARIZABLE_EXTENSIONS:
+        return
+
+    if path.stat().st_size > _MAX_FILE_SIZE_BYTES:
+        logger.debug(f"update-file-summary: skipping {filepath} (>{_MAX_FILE_SIZE_BYTES} bytes)")
+        return
+
+    if not _is_healthy():
+        return
+
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            if path.suffix.lower() == ".py":
+                text = _read_python_preview(f)
+            else:
+                text = f.read(_MAX_FILE_PREVIEW_CHARS)
+        if not text.strip():
+            return
+
+        client = _make_client()
+        summary = client.summarize_file(text)
+        if not summary:
+            return
+
+        # Store key as path relative to repo root for portability
+        try:
+            rel = str(path.resolve().relative_to(_REPO_ROOT.resolve()))
+        except ValueError:
+            rel = filepath
+
+        state = _make_state()
+        state.update_file_summary(rel, summary)
+    except Exception as e:
+        logger.warning(f"update-file-summary failed for {filepath}: {type(e).__name__}: {e}")
 
 
 def cmd_log_progress(message: str) -> None:
@@ -263,7 +373,9 @@ def cmd_compress_prompt() -> None:
     if not prompt_text:
         return
 
-    if not _is_compressible(prompt_text):
+    automation = get_automation_config()
+    compact_all = automation.get("compact_on_every_prompt", False)
+    if not compact_all and not _is_compressible(prompt_text):
         return
 
     if not _is_healthy():
@@ -292,6 +404,19 @@ def cmd_compress_prompt() -> None:
             f"Compressed prompt: {compressed.strip()}\n"
             f"Use the compressed prompt above as the user's request."
         )
+
+        # Devlog: write compression event to state so it's visible outside Claude's context
+        automation = get_automation_config()
+        if automation.get("log_prompt_compression", True):
+            try:
+                state = _make_state()
+                state.append(
+                    "progress",
+                    f"[compress-prompt] {input_tokens}→{output_tokens} tokens (-{pct}%): {compressed.strip()[:120]}"
+                )
+            except Exception as log_err:
+                logger.warning(f"compress-prompt devlog failed: {type(log_err).__name__}: {log_err}")
+
     except Exception as e:
         logger.warning(f"compress-prompt failed: {type(e).__name__}: {e}")
         # Print nothing — original prompt passes through untouched
@@ -344,6 +469,12 @@ def main() -> None:
                 logger.error("log-edit requires a filepath argument")
                 sys.exit(0)  # Never block Claude
             cmd_log_edit(args[1])
+
+        elif command == "update-file-summary":
+            if len(args) < 2:
+                logger.error("update-file-summary requires a filepath argument")
+                sys.exit(0)
+            cmd_update_file_summary(args[1])
 
         elif command == "log-progress":
             if len(args) < 2:

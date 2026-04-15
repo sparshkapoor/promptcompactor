@@ -25,6 +25,7 @@ except Exception:
 if [ -n "$FILE_PATH" ]; then
     # Fire-and-forget: don't block Claude's next action
     "$PYTHON" scripts/hook_runner.py log-edit "$FILE_PATH" 2>/dev/null &
+    "$PYTHON" scripts/hook_runner.py update-file-summary "$FILE_PATH" 2>/dev/null &
 fi
 
 exit 0

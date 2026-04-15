@@ -13,7 +13,7 @@ def client(tmp_path):
     """ApfelClient with a real prompts directory."""
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir()
-    for name in ("compress", "classify", "summarize", "extract"):
+    for name in ("compress", "classify", "summarize", "file_summary"):
         (prompts_dir / f"{name}.txt").write_text(f"System prompt for {name}.")
 
     c = ApfelClient()
@@ -198,3 +198,35 @@ def test_default_model_used_in_api_call(client):
                       return_value=_make_completion("result")) as mock_create:
         client.compress("some text to compress here with enough words")
     assert mock_create.call_args.kwargs["model"] == DEFAULT_MODEL
+
+
+def test_summarize_file_returns_first_line(client):
+    """summarize_file returns only the first line of a multi-line response."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("One-line description.\nExtra line.")):
+        result = client.summarize_file("file content here")
+    assert result == "One-line description."
+
+
+def test_summarize_file_returns_empty_on_failure(client):
+    """summarize_file returns empty string when the model call fails."""
+    with patch.object(client.client.chat.completions, "create",
+                      side_effect=Exception("timeout")):
+        result = client.summarize_file("file content here")
+    assert result == ""
+
+
+def test_summarize_file_returns_empty_on_none_response(client):
+    """summarize_file returns empty string when model returns None."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion(None)):
+        result = client.summarize_file("file content here")
+    assert result == ""
+
+
+def test_summarize_file_strips_whitespace(client):
+    """summarize_file strips leading/trailing whitespace from the result."""
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("  trimmed description  ")):
+        result = client.summarize_file("file content")
+    assert result == "trimmed description"

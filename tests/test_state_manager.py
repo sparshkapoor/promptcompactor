@@ -179,3 +179,147 @@ def test_unknown_type_defaults_to_progress(tmp_path):
     sm.append("unknown_type_xyz", "unknown type entry")
     content = sm.read("progress")
     assert "unknown type entry" in content
+
+
+# ── update_file_summary tests ─────────────────────────────────────────────────
+
+def test_update_file_summary_creates_entry(tmp_path):
+    """update_file_summary creates codebase.md with the given entry."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "MCP server exposing 6 tools.")
+    content = (tmp_path / "codebase.md").read_text()
+    assert "- `src/server.py`: MCP server exposing 6 tools." in content
+
+
+def test_update_file_summary_upserts_existing_entry(tmp_path):
+    """update_file_summary replaces an existing entry rather than appending."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "Old description.")
+    sm.update_file_summary("src/server.py", "New description.")
+    content = (tmp_path / "codebase.md").read_text()
+    assert "New description." in content
+    assert "Old description." not in content
+    assert content.count("src/server.py") == 1
+
+
+def test_update_file_summary_preserves_other_entries(tmp_path):
+    """update_file_summary does not touch entries for other files."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "Server description.")
+    sm.update_file_summary("src/health.py", "Health check module.")
+    sm.update_file_summary("src/server.py", "Updated server description.")
+    content = (tmp_path / "codebase.md").read_text()
+    assert "Updated server description." in content
+    assert "Health check module." in content
+
+
+def test_update_file_summary_strips_null_bytes(tmp_path):
+    """update_file_summary sanitizes null bytes from both path and summary."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/\x00server.py", "desc\x00ription")
+    content = (tmp_path / "codebase.md").read_text()
+    assert "\x00" not in content
+
+
+def test_update_file_summary_skips_empty_inputs(tmp_path):
+    """update_file_summary is a no-op when path or summary is empty."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("", "some summary")
+    sm.update_file_summary("src/foo.py", "")
+    assert not (tmp_path / "codebase.md").exists()
+
+
+def test_read_all_includes_codebase(tmp_path):
+    """read_all includes codebase.md content when it exists."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.append("progress", "did something")
+    sm.update_file_summary("src/server.py", "The MCP server.")
+    result = sm.read_all()
+    assert "Codebase" in result
+    assert "src/server.py" in result
+
+
+def test_read_all_without_codebase(tmp_path):
+    """read_all works normally when codebase.md doesn't exist."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.append("progress", "did something")
+    result = sm.read_all()
+    assert "did something" in result
+    assert "Codebase" not in result
+
+
+# ── read_narrative tests ──────────────────────────────────────────────────────
+
+def test_read_narrative_excludes_codebase(tmp_path):
+    """read_narrative returns VALID_TYPES sections but never includes codebase.md."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.append("progress", "narrative entry")
+    sm.update_file_summary("src/server.py", "The MCP server.")
+    result = sm.read_narrative()
+    assert "narrative entry" in result
+    assert "src/server.py" not in result
+    assert "Codebase" not in result
+
+
+def test_read_narrative_no_files_returns_placeholder(tmp_path):
+    """read_narrative returns the placeholder string when no state files exist."""
+    sm = StateManager(state_dir=tmp_path)
+    result = sm.read_narrative()
+    assert result == "No state files yet."
+
+
+def test_read_narrative_includes_all_valid_types(tmp_path):
+    """read_narrative includes all VALID_TYPES that have content."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.append("progress", "progress entry")
+    sm.append("bug", "bug entry")
+    result = sm.read_narrative()
+    assert "progress entry" in result
+    assert "bug entry" in result
+
+
+# ── read_codebase tests ───────────────────────────────────────────────────────
+
+def test_read_codebase_returns_empty_when_no_file(tmp_path):
+    """read_codebase returns empty string when codebase.md does not exist."""
+    sm = StateManager(state_dir=tmp_path)
+    assert sm.read_codebase() == ""
+
+
+def test_read_codebase_returns_entries_verbatim(tmp_path):
+    """read_codebase returns file entries exactly as stored."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "MCP server.")
+    sm.update_file_summary("src/health.py", "Health check.")
+    result = sm.read_codebase()
+    assert "src/server.py" in result
+    assert "src/health.py" in result
+    assert "MCP server." in result
+
+
+def test_read_codebase_truncates_to_max_entries(tmp_path):
+    """read_codebase returns only the last max_entries entries when the file is large."""
+    sm = StateManager(state_dir=tmp_path)
+    for i in range(10):
+        sm.update_file_summary(f"src/file_{i}.py", f"description {i}")
+    result = sm.read_codebase(max_entries=3)
+    # Should only have the 3 most recent entries
+    entry_lines = [line for line in result.splitlines() if line.startswith("- ")]
+    assert len(entry_lines) == 3
+    assert "showing last 3 of 10" in result
+
+
+def test_read_codebase_no_truncation_note_when_within_limit(tmp_path):
+    """read_codebase adds no truncation note when entries fit within max_entries."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "MCP server.")
+    result = sm.read_codebase(max_entries=50)
+    assert "showing last" not in result
+
+
+def test_read_codebase_preserves_header(tmp_path):
+    """read_codebase always includes the # Codebase Map header line."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/server.py", "MCP server.")
+    result = sm.read_codebase()
+    assert "# Codebase Map" in result

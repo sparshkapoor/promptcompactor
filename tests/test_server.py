@@ -115,7 +115,8 @@ def test_summarize_history_calls_summarize_per_chunk(mock_singletons):
 def test_generate_handoff_no_state(mock_singletons):
     from src.server import generate_handoff
     mock_apfel, mock_state, mock_health = mock_singletons
-    mock_state.read_all.return_value = "No state files yet."
+    mock_state.read_narrative.return_value = "No state files yet."
+    mock_state.read_codebase.return_value = ""
     result = generate_handoff()
     assert "No project state" in result
 
@@ -123,9 +124,10 @@ def test_generate_handoff_no_state(mock_singletons):
 def test_generate_handoff_small_state_returned_as_is(mock_singletons):
     from src.server import generate_handoff
     mock_apfel, mock_state, mock_health = mock_singletons
-    mock_state.read_all.return_value = "## Progress\n- did stuff\n"
+    mock_state.read_narrative.return_value = "## Progress\n- did stuff\n"
+    mock_state.read_codebase.return_value = ""
     result = generate_handoff(token_budget=2000)
-    # Small state fits within budget
+    # Small state fits within budget — no summarization
     assert "## Progress" in result
     mock_apfel.summarize.assert_not_called()
 
@@ -134,11 +136,55 @@ def test_generate_handoff_large_state_summarized(mock_singletons):
     from src.server import generate_handoff
     mock_apfel, mock_state, mock_health = mock_singletons
     # 2000 token budget = ~8000 chars; use 10000 chars to exceed it
-    mock_state.read_all.return_value = "x" * 10000
+    mock_state.read_narrative.return_value = "x" * 10000
+    mock_state.read_codebase.return_value = ""
     mock_apfel.summarize.return_value = "compact summary"
     result = generate_handoff(token_budget=2000)
     mock_apfel.summarize.assert_called_once()
-    assert result == "compact summary"
+    assert "compact summary" in result
+
+
+def test_generate_handoff_codebase_never_summarized(mock_singletons):
+    """Codebase map passes through verbatim even when narrative is large."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_state.read_narrative.return_value = "x" * 10000
+    mock_state.read_codebase.return_value = "# Codebase Map\n\n- `src/server.py`: MCP server."
+    mock_apfel.summarize.return_value = "compact narrative"
+    result = generate_handoff(token_budget=2000)
+    # Narrative was summarized but codebase is verbatim in the output
+    assert "src/server.py" in result
+    assert "MCP server." in result
+    # summarize was called exactly once (for narrative only)
+    mock_apfel.summarize.assert_called_once()
+
+
+def test_generate_handoff_adaptive_budget(mock_singletons):
+    """target_tokens = max(token_budget, estimated * 0.4); prevents over-compression."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    # 5000 tokens estimated (20000 chars); token_budget=400
+    # adaptive target = max(400, 5000*0.4) = max(400, 2000) = 2000
+    narrative = "w " * 10000   # 10000 words ≈ 10000 tokens (rough)
+    mock_state.read_narrative.return_value = narrative
+    mock_state.read_codebase.return_value = ""
+    mock_apfel.summarize.return_value = "summary"
+    generate_handoff(token_budget=400)
+    # summarize must have been called with max_tokens >= 400
+    call_kwargs = mock_apfel.summarize.call_args
+    used_max_tokens = call_kwargs[1].get("max_tokens") or call_kwargs[0][1]
+    assert used_max_tokens >= 400
+
+
+def test_generate_handoff_codebase_only(mock_singletons):
+    """If there is no narrative but codebase exists, return codebase."""
+    from src.server import generate_handoff
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_state.read_narrative.return_value = "No state files yet."
+    mock_state.read_codebase.return_value = "# Codebase Map\n\n- `src/foo.py`: foo."
+    result = generate_handoff(token_budget=2000)
+    assert "src/foo.py" in result
+    mock_apfel.summarize.assert_not_called()
 
 
 def test_get_context_reads_state(mock_singletons):
@@ -159,16 +205,57 @@ def test_summarize_history_falls_back_per_chunk_when_summarize_empty(mock_single
     assert "[...]" in result
 
 
+def test_set_model_calls_reconfigure(mock_singletons):
+    from src.server import set_model
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.model = "gemma4:e4b"
+    mock_apfel._base_url = "http://localhost:11434/v1"
+    result = set_model("apple-foundationmodel", "http://localhost:11434/v1")
+    mock_apfel.reconfigure.assert_called_once_with("apple-foundationmodel", "http://localhost:11434/v1")
+    assert "apple-foundationmodel" in result
+    assert "gemma4:e4b" in result
+
+
+def test_set_model_uses_current_url_when_omitted(mock_singletons):
+    from src.server import set_model
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.model = "gemma4:e4b"
+    mock_apfel._base_url = "http://localhost:11434/v1"
+    set_model("apple-foundationmodel")
+    # Empty base_url should fall back to current _base_url
+    mock_apfel.reconfigure.assert_called_once_with("apple-foundationmodel", "http://localhost:11434/v1")
+
+
+def test_get_info_returns_model_and_health(mock_singletons):
+    from src.server import get_info
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.model = "gemma4:e4b"
+    mock_health.return_value = True
+    result = get_info()
+    assert "gemma4:e4b" in result
+    assert "True" in result
+
+
+def test_get_info_reflects_unhealthy_backend(mock_singletons):
+    from src.server import get_info
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.model = "gemma4:e4b"
+    mock_health.return_value = False
+    result = get_info()
+    assert "False" in result
+
+
 def test_generate_handoff_truncates_when_apfel_down_large_state(mock_singletons):
-    """generate_handoff truncates to char_budget when apfel is down and state is large (covers lines 97-98)."""
+    """generate_handoff truncates narrative to char_budget when apfel is down and state is large."""
     from src.server import generate_handoff
     mock_apfel, mock_state, mock_health = mock_singletons
     token_budget = 100
     # 100 tokens * 4 chars = 400 chars; use 600 chars to exceed budget
-    large_state = "y" * 600
-    mock_state.read_all.return_value = large_state
+    large_narrative = "y" * 600
+    mock_state.read_narrative.return_value = large_narrative
+    mock_state.read_codebase.return_value = ""
     mock_health.return_value = False
     result = generate_handoff(token_budget=token_budget)
     assert "truncated" in result
     char_budget = token_budget * 4
-    assert result.startswith(large_state[:char_budget])
+    assert result.startswith(large_narrative[:char_budget])

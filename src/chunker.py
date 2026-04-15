@@ -3,8 +3,10 @@ from .config import get_max_input_tokens
 
 logger = logging.getLogger("apfel-context.chunker")
 
-# Conservative estimate: 3.5 chars per token (slightly under 4 to build in margin)
-CHARS_PER_TOKEN = 3.5
+# Single source of truth for token estimation used across the whole codebase.
+# 4 chars/token matches the estimate used in server.py and hook_runner.py.
+# Slightly overestimates token count, which is the safe direction for budgeting.
+CHARS_PER_TOKEN = 4
 
 
 def estimate_tokens(text: str) -> int:
