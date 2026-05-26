@@ -37,7 +37,7 @@ Each state file (`progress.md`, `bug.md`, `decision.md`, `architecture.md`) caps
 
 ## Health Check Caching
 
-`check_apfel_health()` caches its result for 10 seconds (`CACHE_SECONDS`). This prevents hammering the `/health` endpoint on every tool invocation during a busy session. The cache is module-level and resets on process restart.
+`check_compactor_health()` caches its result for 10 seconds (`CACHE_SECONDS`). This prevents hammering the `/health` endpoint on every tool invocation during a busy session. The cache is module-level and resets on process restart.
 
 ## Security Model
 

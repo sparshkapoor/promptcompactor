@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions to get ApfelContext running on a fresh Mac.
+Step-by-step instructions to get PromptCompactor running on a fresh Mac.
 
 ## Prerequisites
 
@@ -15,8 +15,8 @@ Step-by-step instructions to get ApfelContext running on a fresh Mac.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/apfel-context
-   cd apfel-context
+   git clone https://github.com/your-org/prompt-compactor
+   cd prompt-compactor
    ```
 
 2. **Install apfel**
@@ -52,13 +52,13 @@ Step-by-step instructions to get ApfelContext running on a fresh Mac.
 
 8. **Register the MCP server with Claude Code**
    ```bash
-   claude mcp add --scope project apfel-context -- python -m src.server
+   claude mcp add --scope project prompt-compactor -- python -m src.server
    ```
 
 9. **Restart Claude Code** to load the new MCP server.
 
 10. **Verify the connection**
-    In Claude Code, type `/mcp` — you should see `apfel-context` listed as connected with 5 tools.
+    In Claude Code, type `/mcp` — you should see `prompt-compactor` listed as connected with 5 tools.
 
 ## Keeping apfel Running
 

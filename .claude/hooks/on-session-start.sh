@@ -7,6 +7,9 @@
 cd "$(dirname "$0")/../.." || exit 0
 PYTHON=".venv/bin/python"
 if [ ! -x "$PYTHON" ]; then
+    PYTHON="${HOME}/.apfel/.venv/bin/python"
+fi
+if [ ! -x "$PYTHON" ]; then
     PYTHON="python3"
 fi
 
@@ -19,9 +22,10 @@ curl -sf -X POST http://localhost:11434/api/generate \
 
 # generate-handoff: summarizes via Gemma if state exceeds max_injection_tokens,
 # otherwise passes it through verbatim. Always stays within the configured budget.
+# Note: hook daemon is managed by launchd (com.promptcompactor.daemon) — no manual start needed.
 STATE_CONTENT=$("$PYTHON" scripts/hook_runner.py generate-handoff 2>/dev/null)
 if [ -n "$STATE_CONTENT" ]; then
-    echo "## Project State (auto-loaded by ApfelContext)"
+    echo "## Project State (auto-loaded by PromptCompactor)"
     echo ""
     echo "$STATE_CONTENT"
 fi

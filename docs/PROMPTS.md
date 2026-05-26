@@ -41,4 +41,4 @@ The classify prompt must produce exactly one of four lowercase words:
 - `decision` — design or technology choice made
 - `architecture` — note about codebase structure
 
-Any other response defaults to `progress`. If you add new categories, you must also update `VALID_TYPES` in `src/state_manager.py` and `VALID_CATEGORIES` in `src/apfel_client.py`.
+Any other response defaults to `progress`. If you add new categories, you must also update `VALID_TYPES` in `src/state_manager.py` and `VALID_CATEGORIES` in `src/compactor_client.py`.

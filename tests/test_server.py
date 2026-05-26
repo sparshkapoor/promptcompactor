@@ -9,7 +9,7 @@ def mock_singletons(tmp_path):
     """Replace module-level singletons with test doubles."""
     with patch("src.server._apfel") as mock_apfel, \
          patch("src.server._state") as mock_state, \
-         patch("src.server.check_apfel_health") as mock_health:
+         patch("src.server.check_compactor_health") as mock_health:
         mock_health.return_value = True
         yield mock_apfel, mock_state, mock_health
 

@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "apfel-context": {
+    "prompt-compactor": {
       "command": "/Users/sparshkapoor/apfelcompactor/apfel-compactor/.venv/bin/python",
       "args": ["-m", "src.server"],
       "env": {
-        "APFEL_MODEL": "gemma4:e4b",
-        "APFEL_BASE_URL": "http://127.0.0.1:11434/v1"
+        "COMPACTOR_MODEL": "gemma4:e4b",
+        "COMPACTOR_BASE_URL": "http://127.0.0.1:11434/v1"
       }
     }
   }

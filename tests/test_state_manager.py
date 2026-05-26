@@ -323,3 +323,111 @@ def test_read_codebase_preserves_header(tmp_path):
     sm.update_file_summary("src/server.py", "MCP server.")
     result = sm.read_codebase()
     assert "# Codebase Map" in result
+
+
+# ---------------------------------------------------------------------------
+# _rotate_codebase tests
+# ---------------------------------------------------------------------------
+
+def test_rotate_codebase_removes_dead_entries(tmp_path):
+    """Entries for paths that no longer exist on disk are pruned."""
+    sm = StateManager(state_dir=tmp_path)
+    codebase_file = tmp_path / "codebase.md"
+    codebase_file.write_text(
+        "# Codebase Map\n"
+        "- `dead/gone.py`: old summary\n"
+        "- `also/missing.py`: another old one\n",
+        encoding="utf-8",
+    )
+    sm._rotate_codebase(codebase_file, root=tmp_path)
+    result = codebase_file.read_text(encoding="utf-8")
+    assert "dead/gone.py" not in result
+    assert "also/missing.py" not in result
+
+
+def test_rotate_codebase_preserves_live_entries(tmp_path):
+    """Entries for files that exist on disk are kept after rotation."""
+    sm = StateManager(state_dir=tmp_path)
+    live = tmp_path / "src" / "server.py"
+    live.parent.mkdir()
+    live.write_text("# real file", encoding="utf-8")
+
+    codebase_file = tmp_path / "codebase.md"
+    codebase_file.write_text(
+        "# Codebase Map\n"
+        f"- `src/server.py`: MCP server.\n"
+        "- `deleted.py`: gone\n",
+        encoding="utf-8",
+    )
+    sm._rotate_codebase(codebase_file, root=tmp_path)
+    result = codebase_file.read_text(encoding="utf-8")
+    assert "src/server.py" in result
+    assert "deleted.py" not in result
+
+
+def test_rotate_codebase_preserves_header(tmp_path):
+    """# Codebase Map header line survives rotation."""
+    sm = StateManager(state_dir=tmp_path)
+    codebase_file = tmp_path / "codebase.md"
+    codebase_file.write_text(
+        "# Codebase Map\n\n- `gone.py`: stale\n",
+        encoding="utf-8",
+    )
+    sm._rotate_codebase(codebase_file, root=tmp_path)
+    assert "# Codebase Map" in codebase_file.read_text(encoding="utf-8")
+
+
+def test_rotate_codebase_fallback_half_keep_when_still_over(tmp_path):
+    """Falls back to newest-half when file is still over limit after dead-entry pruning."""
+    from src.state_manager import MAX_FILE_SIZE_BYTES
+    sm = StateManager(state_dir=tmp_path)
+
+    # Create many real files so dead-entry pruning keeps them all
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    num_files = 300
+    for i in range(num_files):
+        (src_dir / f"f{i}.py").write_text("x", encoding="utf-8")
+
+    long_summary = "x" * 400
+    entries = [f"- `src/f{i}.py`: {long_summary}" for i in range(num_files)]
+    content = "# Codebase Map\n" + "\n".join(entries) + "\n"
+    codebase_file = tmp_path / "codebase.md"
+    codebase_file.write_text(content, encoding="utf-8")
+    assert codebase_file.stat().st_size > MAX_FILE_SIZE_BYTES
+
+    sm._rotate_codebase(codebase_file, root=tmp_path)
+    result = codebase_file.read_text(encoding="utf-8")
+    kept = [l for l in result.splitlines() if l.startswith("- ")]
+    assert len(kept) < num_files
+
+
+def test_no_rotation_under_threshold(tmp_path):
+    """update_file_summary does not rotate when file is under 100KB."""
+    sm = StateManager(state_dir=tmp_path)
+    sm.update_file_summary("src/small.py", "tiny summary")
+    codebase_file = tmp_path / "codebase.md"
+    assert codebase_file.stat().st_size < 100_000
+    result = codebase_file.read_text(encoding="utf-8")
+    assert "src/small.py" in result
+
+
+def test_rotate_codebase_mixed_dead_and_live(tmp_path):
+    """Only live-file entries survive; dead entries are removed without touching live ones."""
+    sm = StateManager(state_dir=tmp_path)
+    live = tmp_path / "keep.py"
+    live.write_text("real", encoding="utf-8")
+
+    codebase_file = tmp_path / "codebase.md"
+    codebase_file.write_text(
+        "# Codebase Map\n"
+        "- `keep.py`: live file\n"
+        "- `dead1.py`: gone\n"
+        "- `dead2.py`: also gone\n",
+        encoding="utf-8",
+    )
+    sm._rotate_codebase(codebase_file, root=tmp_path)
+    result = codebase_file.read_text(encoding="utf-8")
+    assert "keep.py" in result
+    assert "dead1.py" not in result
+    assert "dead2.py" not in result

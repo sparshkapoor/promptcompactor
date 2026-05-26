@@ -1,7 +1,7 @@
 import logging
 from .config import get_max_input_tokens
 
-logger = logging.getLogger("apfel-context.chunker")
+logger = logging.getLogger("prompt-compactor.chunker")
 
 # Single source of truth for token estimation used across the whole codebase.
 # 4 chars/token matches the estimate used in server.py and hook_runner.py.

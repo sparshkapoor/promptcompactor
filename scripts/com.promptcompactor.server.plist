@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.apfel-context.server</string>
+    <string>com.promptcompactor.server</string>
 
     <!--
         Default: Ollama (current backend, gemma4:e4b).
@@ -38,9 +38,9 @@
     <integer>5</integer>
 
     <key>StandardOutPath</key>
-    <string>/tmp/apfel-context-server.stdout.log</string>
+    <string>/tmp/prompt-compactor-server.stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/tmp/apfel-context-server.stderr.log</string>
+    <string>/tmp/prompt-compactor-server.stderr.log</string>
 </dict>
 </plist>

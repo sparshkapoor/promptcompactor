@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bench.py — Token count + compression benchmark for ApfelContext.
+bench.py — Token count + compression benchmark for PromptCompactor.
 
 Compares raw token count vs compressed output across backends (Gemma, apfel, etc.).
 Measures latency and output tokens/sec so you can see exactly what the compressor buys you.
@@ -27,7 +27,7 @@ from openai import OpenAI
 # ── path setup so we can import src/ without installing the package ─────────
 _REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
-from src.apfel_client import ApfelClient  # noqa: E402
+from src.compactor_client import CompactorClient  # noqa: E402
 
 # ── tokenizer setup ──────────────────────────────────────────────────────────
 # cl100k_base is a reasonable general-purpose approximation.
@@ -265,7 +265,7 @@ def print_results(label: str, results: list[BenchResult], show_output: bool, do_
 # ── main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Benchmark ApfelContext compression: token count, ratio, and latency."
+        description="Benchmark PromptCompactor compression: token count, ratio, and latency."
     )
     input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument("-f", "--file", type=Path, help="Read input text from file")

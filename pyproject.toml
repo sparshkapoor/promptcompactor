@@ -1,5 +1,5 @@
 [project]
-name = "apfel-context"
+name = "prompt-compactor"
 version = "0.1.0"
 description = "Free, local context compaction for AI coding agents using Apple's on-device LLM"
 readme = "README.md"
@@ -18,3 +18,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires Ollama running on localhost:11434",
+]

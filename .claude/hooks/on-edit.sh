@@ -22,10 +22,27 @@ except Exception:
     pass
 " 2>/dev/null)
 
+# Try daemon first (no Python startup cost); fall back to direct invocation
+_hook() {
+    local cmd="$1" arg="${2:-}"
+    if [ -n "$arg" ]; then
+        printf '%s %s\n' "$cmd" "$arg" | \
+            curl -sf --connect-timeout 0.5 --max-time 8 \
+            -X POST http://localhost:7737/run --data-binary @- 2>/dev/null \
+            || "$PYTHON" scripts/hook_runner.py "$cmd" "$arg" 2>/dev/null
+    else
+        printf '%s\n' "$cmd" | \
+            curl -sf --connect-timeout 0.5 --max-time 8 \
+            -X POST http://localhost:7737/run --data-binary @- 2>/dev/null \
+            || "$PYTHON" scripts/hook_runner.py "$cmd" 2>/dev/null
+    fi
+}
+
 if [ -n "$FILE_PATH" ]; then
-    # Fire-and-forget: don't block Claude's next action
-    "$PYTHON" scripts/hook_runner.py log-edit "$FILE_PATH" 2>/dev/null &
-    "$PYTHON" scripts/hook_runner.py update-file-summary "$FILE_PATH" 2>/dev/null &
+    # Fire-and-forget: don't block Claude's next action.
+    # log-edit also sets the per-project sidecar flag in state_dir/.edit_this_turn
+    _hook log-edit "$FILE_PATH" &
+    _hook update-file-summary "$FILE_PATH" &
 fi
 
 exit 0

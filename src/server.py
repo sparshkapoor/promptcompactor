@@ -7,19 +7,20 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-logger = logging.getLogger("apfel-context")
+logger = logging.getLogger("prompt-compactor")
 
 from fastmcp import FastMCP
-from .apfel_client import ApfelClient, MAX_INPUT_TOKENS, DEFAULT_BASE_URL
+from .compactor_client import CompactorClient, MAX_INPUT_TOKENS, DEFAULT_BASE_URL
 from .state_manager import StateManager, VALID_TYPES
 from .chunker import chunk_text, CHARS_PER_TOKEN
-from .health import check_apfel_health
+from .health import check_compactor_health
+from .config import get_state_dir
 
-mcp = FastMCP("apfel-context")
+mcp = FastMCP("prompt-compactor")
 
 # Initialize on import — these are module-level singletons
-_apfel = ApfelClient()
-_state = StateManager()
+_apfel = CompactorClient()
+_state = StateManager(state_dir=get_state_dir())
 
 
 @mcp.tool
@@ -30,8 +31,8 @@ def compact_prompt(text: str) -> str:
     Returns compressed text, or original text if compression fails."""
     if not text or len(text.split()) < 15:
         return text
-    if not check_apfel_health():
-        logger.warning("apfel unavailable, returning original text")
+    if not check_compactor_health():
+        logger.warning("ollama unavailable, returning original text")
         return text
     result = _apfel.compress(text)
     # Safety: never return empty string from compression
@@ -47,7 +48,7 @@ def log_event(event_type: str, content: str) -> str:
     if not content or not content.strip():
         return "Error: empty content"
     if event_type == "auto":
-        if check_apfel_health():
+        if check_compactor_health():
             event_type = _apfel.classify(content)
         else:
             event_type = "progress"
@@ -66,9 +67,9 @@ def summarize_history(turns: str) -> str:
     Falls back to truncation if apfel is unavailable."""
     if not turns or not turns.strip():
         return "Error: no conversation turns provided."
-    if not check_apfel_health():
-        logger.warning("apfel unavailable, truncating instead of summarizing")
-        return turns[:2000] + "\n[... truncated, apfel unavailable ...]"  # 2000 chars ~500 tokens
+    if not check_compactor_health():
+        logger.warning("ollama unavailable, truncating instead of summarizing")
+        return turns[:2000] + "\n[... truncated, ollama unavailable ...]"  # 2000 chars ~500 tokens
     chunks = chunk_text(turns, max_tokens=MAX_INPUT_TOKENS)
     summaries = []
     for i, chunk in enumerate(chunks):
@@ -108,9 +109,9 @@ def generate_handoff(token_budget: int = 2000) -> str:
     if estimated_narrative <= token_budget:
         return _assemble(narrative)
 
-    if not check_apfel_health():
+    if not check_compactor_health():
         char_budget = int(token_budget * CHARS_PER_TOKEN)
-        truncated = narrative[:char_budget] + "\n[... truncated, apfel unavailable ...]"
+        truncated = narrative[:char_budget] + "\n[... truncated, ollama unavailable ...]"
         return _assemble(truncated)
 
     # Adaptive budget: compress to at most 60% of original, no less than token_budget.
@@ -138,7 +139,7 @@ def set_model(model: str, base_url: str = "") -> str:
 def get_info() -> str:
     """Return current server configuration: active model, base URL, and health status.
     Use this to verify which model (Gemma 4, apfel, etc.) is handling requests."""
-    healthy = check_apfel_health()
+    healthy = check_compactor_health()
     return (
         f"Model: {_apfel.model}\n"
         f"Base URL: {DEFAULT_BASE_URL}\n"

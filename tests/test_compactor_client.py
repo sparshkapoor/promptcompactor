@@ -1,22 +1,22 @@
-"""Tests for src/apfel_client.py"""
+"""Tests for src/compactor_client.py"""
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from pathlib import Path
-from src.apfel_client import (
-    ApfelClient, VALID_CATEGORIES, DEFAULT_CATEGORY,
+from src.compactor_client import (
+    CompactorClient, VALID_CATEGORIES, DEFAULT_CATEGORY,
     DEFAULT_MODEL, MAX_INPUT_TOKENS,
 )
 
 
 @pytest.fixture
 def client(tmp_path):
-    """ApfelClient with a real prompts directory."""
+    """CompactorClient with a real prompts directory."""
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir()
     for name in ("compress", "classify", "summarize", "file_summary"):
         (prompts_dir / f"{name}.txt").write_text(f"System prompt for {name}.")
 
-    c = ApfelClient()
+    c = CompactorClient()
     c.prompts_dir = prompts_dir
     return c
 
@@ -98,7 +98,7 @@ def test_summarize_fallback_on_failure(client):
 
 
 def test_truncate_input_truncates_long_text(client):
-    from src.apfel_client import MAX_INPUT_CHARS
+    from src.compactor_client import MAX_INPUT_CHARS
     long_text = "a" * (MAX_INPUT_CHARS + 1000)
     truncated = client._truncate_input(long_text)
     assert len(truncated) <= MAX_INPUT_CHARS + 100  # account for suffix
@@ -182,7 +182,7 @@ def test_custom_model_passed_to_api(tmp_path):
     prompts_dir.mkdir()
     (prompts_dir / "compress.txt").write_text("compress prompt")
 
-    c = ApfelClient(model="apple-foundationmodel")
+    c = CompactorClient(model="apple-foundationmodel")
     c.prompts_dir = prompts_dir
 
     with patch.object(c.client.chat.completions, "create",
@@ -193,7 +193,7 @@ def test_custom_model_passed_to_api(tmp_path):
 
 
 def test_default_model_used_in_api_call(client):
-    """ApfelClient() with no model arg must call the API with DEFAULT_MODEL."""
+    """CompactorClient() with no model arg must call the API with DEFAULT_MODEL."""
     with patch.object(client.client.chat.completions, "create",
                       return_value=_make_completion("result")) as mock_create:
         client.compress("some text to compress here with enough words")

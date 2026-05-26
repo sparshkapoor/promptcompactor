@@ -3,14 +3,14 @@ import time
 import urllib.request
 import urllib.error
 
-logger = logging.getLogger("apfel-context.health")
+logger = logging.getLogger("prompt-compactor.health")
 
 _last_check: float = 0.0
 _last_result: bool = False
 CACHE_SECONDS = 10.0  # Don't check more often than every 10s
 
 
-def check_apfel_health(base_url: str = "http://localhost:11434") -> bool:
+def check_compactor_health(base_url: str = "http://localhost:11434") -> bool:
     """Check if apfel server is running and healthy.
     Caches result for CACHE_SECONDS to avoid excessive requests."""
     global _last_check, _last_result

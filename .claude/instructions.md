@@ -19,7 +19,7 @@
 - Never use print() or sys.stdout.write() anywhere in src/ — stdout is reserved for MCP JSON-RPC protocol. This will corrupt communication with Claude Code.
 - Never catch broad exceptions silently. If you catch Exception, you must log it with the exception type and message.
 - Never construct file paths from unsanitized user input. Always go through StateManager._validate_type() and _get_path().
-- Never hardcode the apfel URL outside of ApfelClient.__init__. It should be configurable from one place.
+- Never hardcode the apfel URL outside of CompactorClient.__init__. It should be configurable from one place.
 - Never make real HTTP calls in tests. Mock the OpenAI client.
 - Never assume apfel is running. Every tool function must handle the apfel-down case gracefully.
 - Never import from the prompts/ files at module level. Load them at call time so missing files are caught per-call, not at server startup.
@@ -42,14 +42,14 @@
 
 ### Architecture Rules
 - The MCP server communicates with Claude Code via stdio and with apfel via HTTP. These are separate transports. Do not attempt to call apfel CLI via subprocess stdin/stdout from within the MCP server — it will corrupt the JSON-RPC protocol.
-- ApfelClient is the single point of contact for apfel. All LLM calls go through it. Do not create additional OpenAI client instances elsewhere.
+- CompactorClient is the single point of contact for apfel. All LLM calls go through it. Do not create additional OpenAI client instances elsewhere.
 - StateManager is the single point of contact for filesystem state. All file reads/writes go through it. Do not use open() directly for state files elsewhere.
 - The health check module caches results for 10 seconds. Do not bypass the cache or add per-call health checks.
 
 ### When Reviewing Copilot-Generated Code
 This repo was initially built by GitHub Copilot's coding agent. Watch for these patterns (some already confirmed present):
 - **Known issue:** `get_context()` docstring (server.py) says "bugs.md, decisions.md" — actual files are `bug.md` and `decision.md`. Runtime is correct; docstring is wrong.
-- **Known issue:** `extract.txt` prompt file exists with no corresponding `ApfelClient.extract()` method — unused dead code.
+- **Known issue:** `extract.txt` prompt file exists with no corresponding `CompactorClient.extract()` method — unused dead code.
 - **Known issue:** `generate_handoff` does not chunk large state before calling `_apfel.summarize()` — for very large state, apfel will silently truncate internally rather than summarize all of it.
 - Imports that reference nonexistent modules or methods
 - Functions defined but never called

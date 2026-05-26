@@ -1,8 +1,8 @@
-# ApfelContext
+# PromptCompactor
 
 > Free, local context compaction for Claude Code using Apple's on-device LLM
 
-ApfelContext is an MCP server that routes context compaction through Apple's on-device 3B LLM via the open-source **apfel** tool. It compresses verbose prompts, summarizes conversation history, classifies and logs development events to state files, and generates session handoff digests. All LLM inference runs locally on Apple Silicon's Neural Engine at zero cost — no API keys, no cloud calls, no telemetry.
+PromptCompactor is an MCP server that routes context compaction through Apple's on-device 3B LLM via the open-source **apfel** tool. It compresses verbose prompts, summarizes conversation history, classifies and logs development events to state files, and generates session handoff digests. All LLM inference runs locally on Apple Silicon's Neural Engine at zero cost — no API keys, no cloud calls, no telemetry.
 
 ## Requirements
 
@@ -24,12 +24,12 @@ ApfelContext is an MCP server that routes context compaction through Apple's on-
 ```bash
 pip install -r requirements.txt
 apfel --serve &
-claude mcp add apfel-context -- python -m src.server
+claude mcp add prompt-compactor -- python -m src.server
 ```
 
 ## Verify
 
-In Claude Code, run `/mcp` — you should see `apfel-context` listed as connected.
+In Claude Code, run `/mcp` — you should see `prompt-compactor` listed as connected.
 
 ## Tools
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .config import get_backend_config, get_max_input_tokens
 
-logger = logging.getLogger("apfel-context.client")
+logger = logging.getLogger("prompt-compactor.client")
 
 # Valid classification categories
 VALID_CATEGORIES = frozenset({"progress", "bug", "decision", "architecture"})
@@ -24,7 +24,7 @@ DEFAULT_MAX_RETRIES = 2
 SUMMARY_FALLBACK_CHARS = 500
 
 
-class ApfelClient:
+class CompactorClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,

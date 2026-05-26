@@ -1,4 +1,4 @@
-# ApfelContext — Project Plan
+# PromptCompactor — Project Plan
 
 ## What This Is
 An MCP server that gives Claude Code a free, local context compaction layer. Instead of using expensive cloud models (Claude, Gemini, GPT) to compress context when the window fills up, this routes compaction tasks through Apple's on-device 3B LLM via apfel. Every call is free, instant, and fully local.
@@ -40,7 +40,7 @@ Transport rule: MCP server uses stdio for Claude Code, HTTP for Ollama. Never mi
 - Ollama modelfile updated with `num_ctx 131072` — previously defaulted to 4096
 - qwen2.5:1.5b evaluated and rejected: mangles structured data (rewrites ls/grep output to prose), disqualifying it as a context compressor
 - Fallback: **apfel** (`apple-foundationmodel`, 4K context, requires macOS 26 Tahoe) — available but not actively used
-- Switch via: `ApfelClient(model="apple-foundationmodel")` in `server.py` line 21
+- Switch via: `CompactorClient(model="apple-foundationmodel")` in `server.py` line 21
 
 ## Prompt Files (prompts/)
 Three system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`.
@@ -67,13 +67,13 @@ Three system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`.
 - Python startup cost on every prompt: `on-prompt.sh` invokes Python unconditionally; for short prompts (~"yes", "ok") this adds ~0.3-0.5s per turn with no benefit. Add a shell-side word count pre-check: `[ "$(echo "$PROMPT" | wc -w)" -lt 40 ] && exit 0` before invoking Python.
 
 **Low priority / hardening:**
-- No integration test: all 105 tests mock the OpenAI client; the path FastMCP → ApfelClient → Ollama → response has never been exercised by a test. Add one integration test (skipped when Ollama is unreachable) that starts the server and calls a tool end-to-end.
+- No integration test: all 105 tests mock the OpenAI client; the path FastMCP → CompactorClient → Ollama → response has never been exercised by a test. Add one integration test (skipped when Ollama is unreachable) that starts the server and calls a tool end-to-end.
 - `health.py` uses module-level globals (`_last_check`, `_last_result`) for cache; this bleeds state between test modules if tests don't reload the module. Low risk but could cause intermittent failures.
 
 ## Known Issues (resolved)
 - ~~`get_context()` docstring says "bugs.md, decisions.md"~~ — fixed in server.py
 - ~~`generate_handoff` ignored token_budget when model healthy~~ — fixed in hook_runner.py `generate-handoff` command
-- ~~Hardcoded token limits in ApfelClient and chunker~~ — now driven by config.json
+- ~~Hardcoded token limits in CompactorClient and chunker~~ — now driven by config.json
 - ~~generate_handoff lossy-summarized codebase.md together with narrative~~ — codebase now always verbatim via `read_codebase(max_entries=50)`
 - ~~Hard 400-token compression floor caused 90% loss on large state files~~ — adaptive: `max(token_budget, estimated * 0.4)`
 - ~~"5 Tools" in plan.md~~ — updated to 7 (set_model, get_info added in session 5)

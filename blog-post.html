@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link href="https://fonts.googleapis.com/css?family=Inter:400,600,700,800" rel="stylesheet" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Building PromptCompactor: Free Local Context Compaction for Claude Code</title>
+    <link rel="stylesheet" href="../blog.css?v=2" />
+    <link rel="icon" type="image/x-icon" href="../../assets/images/sparsh-website-ico.ico" />
+    <style>
+      /* Chart styles */
+      .chart-container {
+        background: #f9f9f9;
+        border: 1px solid #e5e5e5;
+        border-radius: 10px;
+        padding: 24px 24px 16px;
+        margin: 32px 0;
+      }
+      .chart-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 20px;
+      }
+      .chart-note {
+        font-size: 0.78rem;
+        color: #888;
+        margin-top: 10px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="blog-header">
+      <div class="blog-header-inner">
+        <div class="blog-header-left">
+          <a href="../../index.html">Sparsh Kapoor</a>
+          <span class="separator">/</span>
+          <a href="../index.html" class="blog-label" style="text-decoration:none">Blog</a>
+        </div>
+        <a href="https://open.spotify.com/user/chewwio?si=3713cb10504a4a31" target="_blank" class="soundwave-btn">
+          <div class="soundwave">
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+            <div class="sw-bar"></div><div class="sw-bar"></div><div class="sw-bar"></div>
+          </div>
+          <span class="btn-label">Spotify</span>
+        </a>
+      </div>
+    </header>
+
+    <article class="blog-post">
+      <div class="post-meta">
+        <div class="post-date">May 26, 2026</div>
+        <h1>Building PromptCompactor: Free Local Context Compaction for Claude Code</h1>
+        <div class="read-time">6 min read</div>
+      </div>
+
+      <nav class="toc">
+        <h4>Contents</h4>
+        <ul>
+          <li><a href="#tldr">TL;DR — Problems &amp; Fixes</a></li>
+          <li><a href="#the-problem">The Problem</a></li>
+          <li><a href="#the-solution">The Solution</a></li>
+          <li><a href="#the-tech">The Tech</a></li>
+          <li><a href="#does-it-work">Does It Work?</a></li>
+          <li><a href="#whats-next">What's Next</a></li>
+        </ul>
+      </nav>
+
+      <div class="post-content">
+
+        <h2 id="tldr">TL;DR — Problems &amp; Fixes</h2>
+        <p>Here's a quick rundown of the problems I ran into while building this:</p>
+        <ul>
+          <li><strong><code>stdout</code> silently breaks MCP</strong> — Claude Code's stdio transport reserves stdout entirely for JSON-RPC. A single stray <code>print()</code> anywhere in the server corrupts the protocol with no error message. Fix: log everything to stderr only; <code>logging.getLogger()</code> writes to stderr by default.</li>
+          <li><strong>Hooks blocking Claude's main loop</strong> — synchronous hooks add latency to every keypress. Fix: all hook scripts end with <code>&amp;</code> to fire-and-forget into the background, posting to the daemon asynchronously.</li>
+          <li><strong>Daemon not alive when hooks first fire</strong> — launchd loads the plist and immediately triggers the session-start hook before the virtualenv exists. Fix: added a venv existence check and retry loop in <code>install.sh</code> before registering any hooks.</li>
+          <li><strong>Gemma's context window defaulting to 2K</strong> — Ollama's out-of-the-box context is 2048 tokens regardless of what the model supports. Fix: create a custom Modelfile with <code>PARAMETER num_ctx 131072</code> and run <code>ollama create gemma4:e4b -f Modelfile</code>.</li>
+          <li><strong>State files growing past the context window</strong> — long sessions push <code>codebase.md</code> large enough to overflow on injection. Fix: added a 100KB rotation limit in <code>state_manager.py</code>; old content rolls to an archive file.</li>
+          <li><strong>Session-start injecting deleted files</strong> — <code>codebase.md</code> would list files that no longer existed, confusing Claude about the project structure. Fix: existence-prune the codebase map before injection so only real paths appear.</li>
+        </ul>
+
+        <h2 id="the-problem">The Problem</h2>
+        <p>Like most people, I've been using LLM's to write the majority of my code for a couple of years, specifically Codex and Claude. A couple of months ago, I noticed that Claude's usage limit would be reached significantly faster on my Pro plan than before while asking for very basic prompts, and it was confirmed by Anthropic that they were throttling limits. This became extremely annoying and frustrating when Claude would reach its limit after 1 prompt, and I wanted to find a solution.</p>
+
+        <p>After the Claude Code harness leak, I delved into how they compacted prompts and long chats. I'll write a more extensive blog on this later, but it uses an older version of Sonnet and a sliding-window algorithm to only retain and re-summarize certain parts of the conversation. However, this is extremely expensive, and one of the only ways of fixing this was simply starting a new chat and giving a handoff prompt, but this is time consuming and pretty expensive. I've solved that and added some features to make this free, efficient, and effective.</p>
+
+        <h2 id="the-solution">The Solution</h2>
+        <p>This project uses an MCP server that plugs into Claude Code and handles compaction locally. Instead of asking Claude to summarize your session, it sends that work over HTTP to Ollama — a runtime for running LLMs on your own machine — where Gemma 4 E4B (a 4-billion parameter model from Google) does the summarization for free.</p>
+
+        <p>The architecture is simple:</p>
+
+        <blockquote>
+          <p>Claude Code → stdio → MCP server → HTTP → Ollama (localhost:11434) → Gemma 4 E4B</p>
+        </blockquote>
+
+        <p>Beyond compaction, the server also maintains lightweight state files (<code>progress.md</code>, <code>codebase.md</code>) that persist across sessions. At the start of each new Claude Code session, a compressed snapshot of your project state gets injected into context automatically, so Claude always knows where things left off without you having to re-explain everything.</p>
+
+        <h2 id="the-tech">The Tech</h2>
+        <ul>
+          <li><strong>MCP Server</strong>: Python, using the <code>fastmcp</code> library. Exposes 6 tools to Claude Code over stdio.</li>
+          <li><strong>Local LLM</strong>: Ollama running Gemma 4 E4B — 128K context window, runs entirely on Apple Silicon with no internet required.</li>
+          <li><strong>Hooks</strong>: Claude Code lifecycle hooks (shell scripts) that fire on session start, prompt submit, file edit, and session stop to keep state files updated automatically.</li>
+          <li><strong>Daemon</strong>: A lightweight background server (<code>hook_runner.py --serve</code>) on localhost:7737, started by launchd, that handles async hook calls without blocking Claude's main loop.</li>
+          <li><strong>State</strong>: Plain markdown files in <code>state/</code>. No database, no external services, nothing that can go down.</li>
+        </ul>
+
+        <p>The 6 tools the MCP server exposes are: <code>compact_prompt</code>, <code>summarize_history</code>, <code>generate_handoff</code>, <code>log_event</code>, <code>get_context</code>, and <code>get_info</code>. Most of the interesting work happens in the first three.</p>
+        The diff Claude Code reserves stdout entirely for MCP JSON-RPC, so a single stray print() anywhere in the server silently corrupts the protocol. Hook calls also have to be non-blocking, else they would be calling Claude continuously and hence burning up tokens. The fix was using daemon to create a fire-and-forget POST to, which handles the actual state writes in the background. Here's what one hook call looks like:
+        # on-edit.sh — fires after every file write, logs the change asynchronously
+        INPUT=$(cat)
+        curl -s -X POST http://localhost:7737/log \
+          -H "Content-Type: application/json" \
+          -d "{\"event_type\": \"edit\", \"content\": $INPUT}" &
+        
+  -d "{\"event_type\": \"edit\", \"content\": $INPUT}" &</code></pre>
+
+        <h2 id="does-it-work">Does It Work?</h2>
+        <p>Yes, and considerably well — though the numbers are more honest than I expected. I ran a benchmark sending four representative session content types through Gemma 4 E4B and measuring token count before and after. The results were real, not estimated:</p>
+
+        <!-- Chart 1: Token Reduction — real benchmark data -->
+        <div class="chart-container">
+          <div class="chart-title">PromptCompactor — token count before vs. after compaction (measured)</div>
+          <svg viewBox="0 0 560 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+            <!-- Grid lines. Y-axis: 0–200 tokens, 150px range. Scale: 0.75px per token. Baseline y=170 -->
+            <line x1="80" y1="20"  x2="80"  y2="170" stroke="#ddd" stroke-width="1"/>
+            <line x1="80" y1="170" x2="540" y2="170" stroke="#ddd" stroke-width="1"/>
+            <line x1="80" y1="132.5" x2="540" y2="132.5" stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+            <line x1="80" y1="95"  x2="540" y2="95"  stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+            <line x1="80" y1="57.5" x2="540" y2="57.5" stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+            <line x1="80" y1="20"  x2="540" y2="20"  stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+
+            <!-- Y-axis labels -->
+            <text x="72" y="173"   font-size="11" fill="#999" text-anchor="end" font-family="Inter,sans-serif">0</text>
+            <text x="72" y="135.5" font-size="11" fill="#999" text-anchor="end" font-family="Inter,sans-serif">50</text>
+            <text x="72" y="98"    font-size="11" fill="#999" text-anchor="end" font-family="Inter,sans-serif">100</text>
+            <text x="72" y="60.5"  font-size="11" fill="#999" text-anchor="end" font-family="Inter,sans-serif">150</text>
+            <text x="72" y="23"    font-size="11" fill="#999" text-anchor="end" font-family="Inter,sans-serif">200</text>
+
+            <!-- Group 1: Session recap — before=169 (126.75px), after=114 (85.5px) -->
+            <rect x="100" y="43.25" width="28" height="126.75" fill="#6366f1" rx="3"/>
+            <rect x="132" y="84.5"  width="28" height="85.5"   fill="#a5b4fc" rx="3"/>
+            <text x="120" y="186" font-size="10" fill="#888" text-anchor="middle" font-family="Inter,sans-serif">Session recap</text>
+            <text x="120" y="196" font-size="9"  fill="#aaa" text-anchor="middle" font-family="Inter,sans-serif">−32%</text>
+
+            <!-- Group 2: Bug context — before=157 (117.75px), after=116 (87px) -->
+            <rect x="210" y="52.25" width="28" height="117.75" fill="#6366f1" rx="3"/>
+            <rect x="242" y="83"    width="28" height="87"     fill="#a5b4fc" rx="3"/>
+            <text x="230" y="186" font-size="10" fill="#888" text-anchor="middle" font-family="Inter,sans-serif">Bug context</text>
+            <text x="230" y="196" font-size="9"  fill="#aaa" text-anchor="middle" font-family="Inter,sans-serif">−26%</text>
+
+            <!-- Group 3: Code review — before=164 (123px), after=139 (104.25px) -->
+            <rect x="320" y="47"    width="28" height="123"    fill="#6366f1" rx="3"/>
+            <rect x="352" y="65.75" width="28" height="104.25" fill="#a5b4fc" rx="3"/>
+            <text x="340" y="186" font-size="10" fill="#888" text-anchor="middle" font-family="Inter,sans-serif">Code review</text>
+            <text x="340" y="196" font-size="9"  fill="#aaa" text-anchor="middle" font-family="Inter,sans-serif">−15%</text>
+
+            <!-- Group 4: File changes — before=169 (126.75px), after=166 (124.5px) -->
+            <rect x="430" y="43.25" width="28" height="126.75" fill="#6366f1" rx="3"/>
+            <rect x="462" y="45.5"  width="28" height="124.5"  fill="#a5b4fc" rx="3"/>
+            <text x="450" y="186" font-size="10" fill="#888" text-anchor="middle" font-family="Inter,sans-serif">File changes</text>
+            <text x="450" y="196" font-size="9"  fill="#aaa" text-anchor="middle" font-family="Inter,sans-serif">−2%</text>
+
+            <!-- Legend -->
+            <rect x="160" y="208" width="12" height="12" fill="#6366f1" rx="2"/>
+            <text x="176" y="219" font-size="11" fill="#555" font-family="Inter,sans-serif">Original</text>
+            <rect x="250" y="208" width="12" height="12" fill="#a5b4fc" rx="2"/>
+            <text x="266" y="219" font-size="11" fill="#555" font-family="Inter,sans-serif">After compaction</text>
+          </svg>
+          <p class="chart-note">Token counts approximated at 4 chars/token. Gemma 4 E4B, Apple M-series. Latency: 4s (bug context) to 24s (session recap). File change logs barely compress — structured data is harder to reduce than prose.</p>
+        </div>
+
+        <!-- Chart 2: Context window growth — illustrative based on real reduction rates -->
+        <div class="chart-container">
+          <div class="chart-title">Context window growth over a 2-hour session — with vs. without compaction</div>
+          <svg viewBox="0 0 560 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+            <!-- Grid -->
+            <line x1="60" y1="20" x2="60" y2="160" stroke="#ddd" stroke-width="1"/>
+            <line x1="60" y1="160" x2="530" y2="160" stroke="#ddd" stroke-width="1"/>
+            <line x1="60" y1="120" x2="530" y2="120" stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+            <line x1="60" y1="80"  x2="530" y2="80"  stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+            <line x1="60" y1="40"  x2="530" y2="40"  stroke="#eee" stroke-width="1" stroke-dasharray="4,3"/>
+
+            <!-- Y labels -->
+            <text x="52" y="163" font-size="10" fill="#999" text-anchor="end" font-family="Inter,sans-serif">0%</text>
+            <text x="52" y="123" font-size="10" fill="#999" text-anchor="end" font-family="Inter,sans-serif">25%</text>
+            <text x="52" y="83"  font-size="10" fill="#999" text-anchor="end" font-family="Inter,sans-serif">50%</text>
+            <text x="52" y="43"  font-size="10" fill="#999" text-anchor="end" font-family="Inter,sans-serif">75%</text>
+
+            <!-- X labels -->
+            <text x="60"  y="175" font-size="10" fill="#999" text-anchor="middle" font-family="Inter,sans-serif">0m</text>
+            <text x="175" y="175" font-size="10" fill="#999" text-anchor="middle" font-family="Inter,sans-serif">30m</text>
+            <text x="295" y="175" font-size="10" fill="#999" text-anchor="middle" font-family="Inter,sans-serif">60m</text>
+            <text x="413" y="175" font-size="10" fill="#999" text-anchor="middle" font-family="Inter,sans-serif">90m</text>
+            <text x="530" y="175" font-size="10" fill="#999" text-anchor="middle" font-family="Inter,sans-serif">120m</text>
+
+            <!-- Without compaction line -->
+            <polyline points="60,158 175,118 295,72 413,38 530,25"
+              fill="none" stroke="#f87171" stroke-width="2.5" stroke-linejoin="round"/>
+
+            <!-- With compaction line — shallower slope reflecting ~20% average reduction -->
+            <polyline points="60,158 175,142 295,126 413,118 530,110"
+              fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linejoin="round"/>
+
+            <!-- Compaction event dots -->
+            <circle cx="295" cy="126" r="4" fill="#6366f1"/>
+            <circle cx="413" cy="118" r="4" fill="#6366f1"/>
+
+            <!-- Legend -->
+            <line x1="140" y1="191" x2="160" y2="191" stroke="#f87171" stroke-width="2.5"/>
+            <text x="165" y="195" font-size="11" fill="#555" font-family="Inter,sans-serif">Without compaction</text>
+            <line x1="310" y1="191" x2="330" y2="191" stroke="#6366f1" stroke-width="2.5"/>
+            <circle cx="320" cy="191" r="3" fill="#6366f1"/>
+            <text x="335" y="195" font-size="11" fill="#555" font-family="Inter,sans-serif">With PromptCompactor</text>
+          </svg>
+          <p class="chart-note">Illustrative projection based on measured ~19% average reduction. Dots mark compaction events. The main benefit isn't the compression ratio — it's that you're not paying Claude tokens at all.</p>
+        </div>
+
+        Whats next
+
+        So far it works locally, as the MCP is only set up for the specific project. I'm working to make it a global MCP server so I can use it across projects and for all Claude instances automatically.
+        Apart from using better models as they come along (smarter, faster, and easy to run), I want to dynamically budget the amount of information I can inject based on how complex the current task looks. There's also room to improve the codebase map, which right now is a per-file one-liner but could be graph-aware enough to surface which modules depend on each other.
+        One thing I haven't solved completely is measuring whether Gemma's summaries actually preserve the right information. A “bad” compaction where it omits important information, or summarizes incorrectly can mislead Claude for the rest of the session, and I'd have no way to know. That's probably the most important open problem.
+         <a href="https://github.com/sparshkapoor/promptcompactor" target="_blank">github.com/sparshkapoor/promptcompactor</a>.</p>
+
+      </div>
+
+      <a href="../index.html" class="back-link">Back to all posts</a>
+    </article>
+
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+    <script src="../porsche-spinner.js?v=2"></script>
+  </body>
+</html>

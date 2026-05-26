@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 
-logger = logging.getLogger("apfel-context.state")
+logger = logging.getLogger("prompt-compactor.state")
 
 # Strict allowlist of valid state file types
 VALID_TYPES = frozenset({"progress", "bug", "decision", "architecture"})
@@ -115,6 +115,9 @@ class StateManager:
                 lines.append(new_line)
 
             codebase_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            if codebase_file.stat().st_size > MAX_FILE_SIZE_BYTES:
+                logger.warning(f"codebase.md exceeds {MAX_FILE_SIZE_BYTES} bytes, rotating")
+                self._rotate_codebase(codebase_file)
         logger.info(f"Updated codebase map: {safe_path}")
 
     def read_all(self) -> str:
@@ -186,3 +189,33 @@ class StateManager:
         kept = lines[len(lines) // 2:]
         filepath.write_text("\n".join(kept) + "\n", encoding="utf-8")
         logger.info(f"Rotated {filepath.name}: kept {len(kept)}/{len(lines)} entries")
+
+    def _rotate_codebase(self, filepath: Path, root: Path | None = None) -> None:
+        """Prune codebase.md: drop entries for files no longer on disk.
+        Falls back to keeping the newest half if still over limit after pruning."""
+        if root is None:
+            root = Path(__file__).parent.parent.resolve()
+        lines = filepath.read_text(encoding="utf-8").splitlines()
+        header_lines = [l for l in lines if not l.startswith("- ")]
+        entry_lines = [l for l in lines if l.startswith("- ")]
+
+        def _entry_exists(line: str) -> bool:
+            m = re.match(r'^- `([^`]+)`:', line)
+            if not m:
+                return True  # can't parse — keep it
+            p = Path(m.group(1))
+            target = (root / p).resolve() if not p.is_absolute() else p
+            return target.exists()
+
+        kept = [l for l in entry_lines if _entry_exists(l)]
+        dropped = len(entry_lines) - len(kept)
+
+        # If still over limit after pruning dead entries, keep newest half
+        candidate = "\n".join(header_lines + kept) + "\n"
+        if len(candidate.encode()) > MAX_FILE_SIZE_BYTES:
+            kept = kept[len(kept) // 2:]
+
+        filepath.write_text("\n".join(header_lines + kept) + "\n", encoding="utf-8")
+        logger.info(
+            f"Rotated codebase.md: removed {dropped} dead entries, kept {len(kept)}/{len(entry_lines)}"
+        )
