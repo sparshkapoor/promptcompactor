@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-05-31 (session — visible state/ dir, cross-project support)
+- [DONE] Changed `get_state_dir()` primary path from `~/.apfel/projects/<hash>/state/` to `<cwd>/state/` (visible in IDE, project-scoped); hash path kept as fallback when cwd is not writable
+- [DONE] Added `state/` to `.gitignore`
+- [DONE] Migrated real state (progress.md, codebase.md) from `~/.apfel/projects/3490d5ed025f23c8/state/` into `state/` in the repo
+- [DONE] Updated `tests/test_config.py` — renamed misleading test names, added `test_state_dir_local_when_cwd_is_writable`
+- [VERIFIED] 197/197 tests passing
+
 ## 2026-05-31 (session — code-aware compression via AST skeleton)
 - [DONE] Added `tree-sitter==0.21.3` + `tree-sitter-languages>=1.10` to pyproject.toml and requirements.txt (pinned 0.21.3 — 0.22+ broke tree-sitter-languages 1.10.x API)
 - [DONE] New `src/code_extractor.py` — `extract_skeleton(source, language)` uses Tree-sitter to extract function/class signatures + docstrings, drops bodies with `...`; ~70% token reduction; supports python/js/ts/tsx/go/rust/java/c/cpp; fallback to original on any failure

@@ -126,15 +126,26 @@ def get_state_dir(cwd: Path | None = None) -> Path:
 
     Resolution order:
       1. APFEL_STATE_DIR env var (absolute path, used as-is)
-      2. ~/.promptcompactor/projects/<sha256(cwd)[:16]>/state/
+      2. <cwd>/state/  — visible inside the project, gitignored
+      3. ~/.apfel/projects/<sha256(cwd)[:16]>/state/  — fallback when cwd is not writable
 
-    The per-project hash ensures each repo gets its own isolated state
-    without any per-project config or file placement.
+    Storing state in <project>/state/ makes it visible in the IDE and naturally
+    scoped per-project: each repo gets its own state/ folder, no hidden dotfolders.
     """
     env_override = os.environ.get("APFEL_STATE_DIR")
     if env_override:
         return Path(env_override).resolve()
 
-    project_path = str((cwd or Path.cwd()).resolve())
-    project_hash = hashlib.sha256(project_path.encode()).hexdigest()[:16]
+    project_root = (cwd or Path.cwd()).resolve()
+    local_state = project_root / "state"
+
+    # Use local state/ if we can create it (normal case)
+    try:
+        local_state.mkdir(parents=True, exist_ok=True)
+        return local_state
+    except OSError:
+        pass
+
+    # Fallback: hidden per-project dir keyed by path hash
+    project_hash = hashlib.sha256(str(project_root).encode()).hexdigest()[:16]
     return Path.home() / ".apfel" / "projects" / project_hash / "state"

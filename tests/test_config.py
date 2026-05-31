@@ -13,10 +13,11 @@ from src.config import get_state_dir, get_backend_config, get_automation_config,
 # get_state_dir — core isolation guarantee
 # ---------------------------------------------------------------------------
 
-def test_state_dir_default_is_under_apfel_home():
-    """Default state dir lives under ~/.promptcompactor/projects/."""
-    result = get_state_dir(cwd=Path("/some/project"))
-    assert str(result).startswith(str(Path.home() / ".apfel" / "projects"))
+def test_state_dir_local_when_cwd_is_writable(tmp_path):
+    """Primary path is <cwd>/state/ when the directory can be created."""
+    result = get_state_dir(cwd=tmp_path)
+    assert result == tmp_path / "state"
+    assert result.exists()
 
 
 def test_state_dir_ends_with_state():
@@ -25,30 +26,34 @@ def test_state_dir_ends_with_state():
     assert result.name == "state"
 
 
-def test_state_dir_hash_is_16_hex_chars():
-    """Project hash component is exactly 16 lowercase hex characters."""
+def test_state_dir_fallback_to_apfel_home_when_not_writable():
+    """Falls back to ~/.apfel/projects/<hash>/state/ when cwd is not writable."""
     result = get_state_dir(cwd=Path("/some/project"))
-    # path: ~/.promptcompactor/projects/<hash>/state
+    assert str(result).startswith(str(Path.home() / ".apfel" / "projects"))
+
+
+def test_state_dir_hash_is_16_hex_chars():
+    """Fallback hash component is exactly 16 lowercase hex characters."""
+    result = get_state_dir(cwd=Path("/some/project"))
     project_hash = result.parent.name
     assert len(project_hash) == 16
     assert all(c in "0123456789abcdef" for c in project_hash)
 
 
-def test_state_dir_deterministic():
+def test_state_dir_deterministic(tmp_path):
     """Same cwd always produces same state dir."""
-    cwd = Path("/home/user/myproject")
-    assert get_state_dir(cwd=cwd) == get_state_dir(cwd=cwd)
+    assert get_state_dir(cwd=tmp_path) == get_state_dir(cwd=tmp_path)
 
 
-def test_state_dir_different_cwds_produce_different_dirs():
+def test_state_dir_different_cwds_produce_different_dirs(tmp_path):
     """Different project paths get different state dirs (no collision)."""
-    a = get_state_dir(cwd=Path("/projects/alpha"))
-    b = get_state_dir(cwd=Path("/projects/beta"))
+    a = get_state_dir(cwd=tmp_path / "alpha")
+    b = get_state_dir(cwd=tmp_path / "beta")
     assert a != b
 
 
 def test_state_dir_hash_matches_sha256():
-    """Hash is the first 16 chars of sha256 of the resolved cwd string."""
+    """Fallback hash is the first 16 chars of sha256 of the resolved cwd string."""
     cwd = Path("/projects/myapp")
     expected_hash = hashlib.sha256(str(cwd.resolve()).encode()).hexdigest()[:16]
     result = get_state_dir(cwd=cwd)
