@@ -2,7 +2,9 @@ import logging
 from openai import OpenAI
 from pathlib import Path
 
-from .config import get_backend_config, get_max_input_tokens
+from .config import get_backend_config, get_max_input_tokens, get_automation_config
+from .extractor import pre_filter, is_prose
+from .chunker import estimate_tokens
 
 logger = logging.getLogger("prompt-compactor.client")
 
@@ -95,9 +97,62 @@ class CompactorClient:
             return None
 
     def compress(self, text: str) -> str:
-        """Compress text. Returns original on failure."""
+        """Compress text. Returns original on failure.
+
+        Tiered pipeline based on input size:
+        - Short (<300 tokens, prose): extractive-only — no LLM call, instant.
+        - Medium (300–extractive_threshold tokens): Gemma abstractive only.
+        - Large (>extractive_threshold tokens, prose): TF-IDF pre-filter → Gemma.
+
+        Optional quality verification (quality_check config key):
+        - After Gemma compresses, a second verify call confirms key facts survived.
+          If the check fails, the original is returned instead.
+        """
+        automation = get_automation_config()
+        original = text
+        tokens = estimate_tokens(text)
+        threshold = int(automation.get("extractive_threshold", 500))
+
+        # Short prose: extractive-only, skip the LLM entirely
+        # Only applies when pre_filter actually reduces the text (requires 4+ sentences).
+        # If it can't compress (e.g. single-sentence input), fall through to Gemma.
+        EXTRACTIVE_ONLY_LIMIT = 300
+        if tokens <= EXTRACTIVE_ONLY_LIMIT and is_prose(text):
+            filtered = pre_filter(text)
+            if filtered and len(filtered) < len(text):
+                logger.debug(f"Tiered: extractive-only for {tokens}-token input")
+                return filtered
+
+        # Large prose: pre-filter before sending to Gemma
+        if tokens > threshold and is_prose(text):
+            text = pre_filter(text)
+            logger.debug(f"Tiered: extractive pre-filter applied; {tokens} → {estimate_tokens(text)} tokens")
+
         result = self._call("compress", text)
-        return result if result and result.strip() else text
+        if not result or not result.strip():
+            return original
+
+        if automation.get("quality_check", False):
+            if not self.verify(original, result):
+                logger.warning("Quality check failed — returning original text")
+                return original
+
+        return result
+
+    def verify(self, original: str, compressed: str) -> bool:
+        """Check whether `compressed` faithfully preserves all key facts from `original`.
+
+        Returns True if the compression is faithful, False if important information
+        was dropped or distorted. Returns True on LLM failure (fail-open) so a
+        broken verify call never silently discards a valid compression.
+        """
+        prompt = f"ORIGINAL:\n{original}\n\nCOMPRESSED:\n{compressed}"
+        result = self._call("verify", prompt, max_tokens=60)
+        if result is None:
+            logger.warning("verify() call failed — assuming faithful (fail-open)")
+            return True
+        first_line = result.strip().splitlines()[0].strip().upper()
+        return not first_line.startswith("NO")
 
     def classify(self, text: str) -> str:
         """Classify text into event category. Returns 'progress' on failure."""

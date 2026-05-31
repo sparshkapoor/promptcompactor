@@ -82,7 +82,10 @@ def test_compactor_client_summarize_returns_non_empty():
 @skip_no_ollama
 def test_health_check_passes_with_ollama_running():
     """check_compactor_health() returns True when Ollama is up."""
+    import src.health as health_module
     from src.health import check_compactor_health
+    health_module._last_check = 0.0
+    health_module._last_result = False
     assert check_compactor_health("http://localhost:11434") is True
 
 

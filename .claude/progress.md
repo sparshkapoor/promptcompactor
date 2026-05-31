@@ -1,5 +1,14 @@
 # Progress Log
 
+## 2026-05-30 (session — global install + compaction experiments)
+- [DONE] Fixed `json_merge` bug in install.sh (`'PYEOF'` → `PYEOF` so `$CLAUDE_SETTINGS` expands); ran installer — prompt-compactor now registered globally in `~/.claude/settings.json` with all 4 hooks
+- [DONE] Fixed health cache poisoning in `test_integration.py::test_health_check_passes_with_ollama_running` — reset `_last_check/result` before the assertion; 168/168 tests passing
+- [DONE] Experiment A: `src/extractor.py` — pure-Python TF-IDF extractive pre-filter (`pre_filter()`, `is_prose()`); no new dependencies
+- [DONE] Experiment B: `prompts/verify.txt` + `CompactorClient.verify()` — Gemma-as-judge quality check; opt-in via `quality_check: true` in config.json; fail-open (returns True on LLM error)
+- [DONE] Experiment C: tiered compression in `CompactorClient.compress()` — short prose (<300 tok) → extractive-only (no LLM); large prose (>500 tok) → TF-IDF pre-filter → Gemma; medium → Gemma only
+- [DONE] Added `extractive_threshold: 500` and `quality_check: false` to config.json and config.py defaults
+- [NOTE] Tiered extractive-only path requires ≥4 sentences to compress; falls through to Gemma otherwise (single-sentence inputs always go to Gemma)
+
 ## 2026-05-30 (session — README rewrite)
 - [DONE] Rewrote README.md — added benchmark table, Why This Exists section, State Files table, expanded hooks and architecture sections, switching models, known limitations
 

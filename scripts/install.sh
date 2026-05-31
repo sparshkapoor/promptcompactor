@@ -37,11 +37,10 @@ require_cmd() { command -v "$1" &>/dev/null || die "Required command not found: 
 json_merge() {
     local key="$1"
     local value="$2"
-    "$COMPACTOR_HOME/.venv/bin/python" - "$key" "$value" <<'PYEOF'
+    "$COMPACTOR_HOME/.venv/bin/python" - "$key" "$value" <<PYEOF
 import json, sys
 from pathlib import Path
 
-settings_path = Path(sys.argv[1] if len(sys.argv) > 1 else "") if False else Path("$CLAUDE_SETTINGS")
 settings_path = Path("$CLAUDE_SETTINGS")
 settings_path.parent.mkdir(parents=True, exist_ok=True)
 

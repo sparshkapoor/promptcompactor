@@ -38,6 +38,8 @@ _DEFAULTS: dict = {
         "auto_inject_context_on_start": True,
         "compact_on_every_prompt": False,
         "max_injection_tokens": 400,
+        "extractive_threshold": 500,   # tokens; pre-filter above this, skip below
+        "quality_check": False,        # double-check compression with a verify call
     },
     "token_budget": {
         "system_prompt": 300,

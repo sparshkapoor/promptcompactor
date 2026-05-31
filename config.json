@@ -10,7 +10,9 @@
     "auto_inject_context_on_start": true,
     "compact_on_every_prompt": false,
     "max_injection_tokens": 400,
-    "log_prompt_compression": true
+    "log_prompt_compression": true,
+    "extractive_threshold": 500,
+    "quality_check": false
   },
   "token_budget": {
     "system_prompt": 300,
