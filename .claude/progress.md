@@ -1,5 +1,8 @@
 # Progress Log
 
+## 2026-05-30 (session — README rewrite)
+- [DONE] Rewrote README.md — added benchmark table, Why This Exists section, State Files table, expanded hooks and architecture sections, switching models, known limitations
+
 ## 2026-05-26 (session — blog post + benchmark)
 - [DONE] Wrote `blog-post.html` for PromptCompactor — ~6 min read, structured as: TL;DR problems/fixes, The Problem, The Solution, The Tech, Does It Work?, What's Next
 - [DONE] TL;DR section: 6 real build problems documented (stdout/MCP corruption, blocking hooks, daemon startup race, Gemma 2K context default, state file rotation, deleted-file injection)
