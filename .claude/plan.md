@@ -72,6 +72,7 @@ Four system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`, 
 - `health.py` uses module-level globals (`_last_check`, `_last_result`) for cache; this bleeds state between test modules if tests don't reload the module. Low risk but could cause intermittent failures.
 
 ## Known Issues (resolved)
+- ~~VSCode extension not loading prompt-compactor~~ — extension reads `mcpServers` from `~/.claude.json` (not `~/.claude/settings.json`); install.sh now writes to both; `PYTHONPATH` added to env so `cwd` not required
 - ~~`get_context()` docstring says "bugs.md, decisions.md"~~ — fixed in server.py
 - ~~`generate_handoff` ignored token_budget when model healthy~~ — fixed in hook_runner.py `generate-handoff` command
 - ~~Hardcoded token limits in CompactorClient and chunker~~ — now driven by config.json

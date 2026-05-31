@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-05-30 (session — VSCode extension fix + install.sh patch)
+- [DONE] Diagnosed VSCode extension not loading prompt-compactor: extension reads `mcpServers` from `~/.claude.json`, not `~/.claude/settings.json` (CLI uses settings.json; extension uses claude.json — completely different files)
+- [DONE] Diagnosed "Connection closed" error: VSCode extension ignores `cwd` field, so `python -m src.server` fails with `No module named 'src'`; fixed by adding `PYTHONPATH` to env
+- [DONE] Patched `install.sh`: `json_merge` now takes a target path arg; MCP entry written to both `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode); `PYTHONPATH` added to MCP env; hooks still go to settings.json only
+- [DONE] Updated README: removed macOS/Apple Silicon as hard requirements (Ollama runs on Linux/Windows too; launchd is macOS-only but optional)
+- [VERIFIED] Global MCP now works in VSCode extension — prompt-compactor shows connected, 191→59 tokens (-69%) on first test
+
 ## 2026-05-30 (session — global install + compaction experiments)
 - [DONE] Fixed `json_merge` bug in install.sh (`'PYEOF'` → `PYEOF` so `$CLAUDE_SETTINGS` expands); ran installer — prompt-compactor now registered globally in `~/.claude/settings.json` with all 4 hooks
 - [DONE] Fixed health cache poisoning in `test_integration.py::test_health_check_passes_with_ollama_running` — reset `_last_check/result` before the assertion; 168/168 tests passing

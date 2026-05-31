@@ -26,11 +26,11 @@ Claude Code's built-in compaction calls the Claude API — costing tokens every 
 
 ## Requirements
 
-- Apple Silicon Mac (M1 or later)
-- macOS 13+
 - Python 3.10+
 - [Ollama](https://ollama.com) with `gemma4:e4b` pulled
-- Claude Code with MCP support
+- Claude Code (CLI or VSCode extension) with MCP support
+
+> The benchmark numbers above are from Apple Silicon (M-series). Ollama runs on macOS, Linux, and Windows — performance varies by hardware. The launchd auto-start feature is macOS-only but optional.
 
 ---
 
@@ -40,7 +40,7 @@ Claude Code's built-in compaction calls the Claude API — costing tokens every 
 ./scripts/install.sh
 ```
 
-This pulls `gemma4:e4b`, installs Python dependencies, registers the MCP server with Claude Code, and optionally installs a launchd service to keep Ollama running in the background.
+Installs Python dependencies, registers the MCP server globally in both `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode extension), and optionally installs a launchd service to keep Ollama running in the background (macOS only).
 
 ## Manual Install
 
@@ -57,7 +57,10 @@ claude mcp add prompt-compactor -- python -m src.server
 
 ## Verify
 
-In Claude Code, run `/mcp` — you should see `prompt-compactor` listed as connected. Run `get_info` to confirm the backend is healthy and the correct model is active.
+- **CLI:** run `/mcp` in a Claude Code terminal session — `prompt-compactor` should appear connected
+- **VSCode extension:** open the MCP panel — `prompt-compactor` should appear alongside any claude.ai servers
+
+Run `get_info` to confirm the backend is healthy and the correct model is active.
 
 ---
 
@@ -132,7 +135,7 @@ COMPACTOR_MODEL=gemma4:26b
 # Remote Ollama instance on another machine
 COMPACTOR_BASE_URL=http://192.168.x.x:11434/v1
 
-# Legacy fallback — macOS 26+ only, hard 4K context limit
+# Legacy fallback — macOS 26+ only, hard 4K context limit, not recommended
 COMPACTOR_MODEL=apple-foundationmodel
 ```
 

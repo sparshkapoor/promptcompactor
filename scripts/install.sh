@@ -21,6 +21,7 @@ set -euo pipefail
 COMPACTOR_HOME="${COMPACTOR_HOME:-$HOME/.promptcompactor}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_JSON="$HOME/.claude.json"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,18 +38,18 @@ require_cmd() { command -v "$1" &>/dev/null || die "Required command not found: 
 json_merge() {
     local key="$1"
     local value="$2"
-    "$COMPACTOR_HOME/.venv/bin/python" - "$key" "$value" <<PYEOF
+    local target_path="$3"
+    "$COMPACTOR_HOME/.venv/bin/python" - "$key" "$value" "$target_path" <<PYEOF
 import json, sys
 from pathlib import Path
 
-settings_path = Path("$CLAUDE_SETTINGS")
-settings_path.parent.mkdir(parents=True, exist_ok=True)
-
 key = sys.argv[1]
 value = json.loads(sys.argv[2])
+target_path = Path(sys.argv[3])
+target_path.parent.mkdir(parents=True, exist_ok=True)
 
 try:
-    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    settings = json.loads(target_path.read_text()) if target_path.exists() else {}
 except (json.JSONDecodeError, OSError):
     settings = {}
 
@@ -61,8 +62,8 @@ elif isinstance(value, list):
 else:
     settings[key] = value
 
-settings_path.write_text(json.dumps(settings, indent=2) + "\n")
-print(f"  ✓ Updated {settings_path} [{key}]")
+target_path.write_text(json.dumps(settings, indent=2) + "\n")
+print(f"  ✓ Updated {target_path} [{key}]")
 PYEOF
 }
 
@@ -129,7 +130,7 @@ success "Hook scripts installed at $HOOKS_DIR"
 
 info "Registering global MCP server..."
 
-json_merge "mcpServers" "$(cat <<JSON
+MCP_ENTRY="$(cat <<JSON
 {
   "prompt-compactor": {
     "command": "$VENV/bin/python",
@@ -137,12 +138,19 @@ json_merge "mcpServers" "$(cat <<JSON
     "cwd": "$COMPACTOR_HOME",
     "env": {
       "COMPACTOR_MODEL": "gemma4:e4b",
-      "COMPACTOR_BASE_URL": "http://127.0.0.1:11434/v1"
+      "COMPACTOR_BASE_URL": "http://127.0.0.1:11434/v1",
+      "PYTHONPATH": "$COMPACTOR_HOME"
     }
   }
 }
 JSON
 )"
+
+# CLI reads mcpServers from ~/.claude/settings.json
+json_merge "mcpServers" "$MCP_ENTRY" "$CLAUDE_SETTINGS"
+
+# VSCode extension reads mcpServers from ~/.claude.json
+json_merge "mcpServers" "$MCP_ENTRY" "$CLAUDE_JSON"
 
 # ── Step 6: Global hooks registration ────────────────────────────────────────
 
@@ -165,7 +173,7 @@ do
     [[ "$EVENT" == "PostToolUse" ]] && MATCHER="Edit|MultiEdit|Write"
 
     ENTRY="[{\"matcher\": \"$MATCHER\", \"hooks\": [{\"type\": \"command\", \"command\": \"$SCRIPT\", \"async\": $ASYNC}]}]"
-    json_merge "hooks" "{\"$EVENT\": $ENTRY}"
+    json_merge "hooks" "{\"$EVENT\": $ENTRY}" "$CLAUDE_SETTINGS"
 done
 
 success "Hooks registered in $CLAUDE_SETTINGS"
