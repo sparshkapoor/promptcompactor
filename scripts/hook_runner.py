@@ -210,10 +210,15 @@ def cmd_log_edit(filepath: str) -> None:
     else:
         summary = None
 
+    try:
+        rel = str(path.resolve().relative_to(_REPO_ROOT.resolve()))
+    except ValueError:
+        rel = filepath
+
     if summary:
-        entry = f"Edited {filepath}: {summary}"
+        entry = f"Edited {rel}: {summary}"
     else:
-        entry = f"Edited {filepath}"
+        entry = f"Edited {rel}"
 
     state.append("progress", entry)
     # Set sidecar flag so on-stop knows this turn had real edits
@@ -350,8 +355,7 @@ def _is_compressible(text: str) -> bool:
     words = text.split()
     if len(words) < 40:
         return False
-    # Skip very long inputs — Gemma can't compress them within the hook timeout
-    if len(words) > 400:
+    if len(words) > 1000:
         return False
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]

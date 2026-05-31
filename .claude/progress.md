@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-05-31 (session — uninstall fix, relative paths, compressible ceiling)
+- [DONE] Fixed uninstall.sh: `json_remove` now takes a target path arg; removes `mcpServers.prompt-compactor` from both `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode) — mirrors install.sh dual-write logic
+- [DONE] Fixed absolute paths in progress.md: `cmd_log_edit()` in hook_runner.py now resolves `Path(filepath).resolve().relative_to(_REPO_ROOT)` before building the log entry; falls back to full path for files outside the repo
+- [DONE] Confirmed codebase.md rotation already implemented: `update_file_summary()` calls `_rotate_codebase()` after every write (was listed as open in plan.md but code already had it)
+- [DONE] Raised `_is_compressible()` word ceiling from 400 → 1000; removed stale comment about Gemma timeout
+- [VERIFIED] 168/168 tests passing
+
 ## 2026-05-30 (session — VSCode extension fix + install.sh patch)
 - [DONE] Diagnosed VSCode extension not loading prompt-compactor: extension reads `mcpServers` from `~/.claude.json`, not `~/.claude/settings.json` (CLI uses settings.json; extension uses claude.json — completely different files)
 - [DONE] Diagnosed "Connection closed" error: VSCode extension ignores `cwd` field, so `python -m src.server` fails with `No module named 'src'`; fixed by adding `PYTHONPATH` to env

@@ -15,6 +15,7 @@ set -euo pipefail
 
 COMPACTOR_HOME="${COMPACTOR_HOME:-$HOME/.promptcompactor}"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_JSON="$HOME/.claude.json"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 
 info()    { echo "  [compactor] $*"; }
@@ -24,14 +25,15 @@ warn()    { echo "  ⚠ $*" >&2; }
 PYTHON="$COMPACTOR_HOME/.venv/bin/python"
 [[ -x "$PYTHON" ]] || PYTHON="python3"
 
-# Remove a named key from a dict section in settings.json
+# Remove a named key from a dict section in a JSON settings file.
+# Usage: json_remove <target_path> <section> <name>
 json_remove() {
-    local section="$1" name="$2"
+    local target="$1" section="$2" name="$3"
     "$PYTHON" - <<PYEOF
 import json, sys
 from pathlib import Path
 
-p = Path("$CLAUDE_SETTINGS")
+p = Path("$target")
 if not p.exists():
     sys.exit(0)
 
@@ -45,9 +47,9 @@ if isinstance(sec, dict) and "$name" in sec:
     del sec["$name"]
     s["$section"] = sec
     p.write_text(json.dumps(s, indent=2) + "\n")
-    print("  ✓ Removed $section/$name from $CLAUDE_SETTINGS")
+    print("  ✓ Removed $section/$name from $target")
 else:
-    print("  (not found: $section/$name — nothing to remove)")
+    print("  (not found: $section/$name in $target — nothing to remove)")
 PYEOF
 }
 
@@ -99,7 +101,8 @@ PYEOF
 # ── Remove MCP registration ───────────────────────────────────────────────────
 
 info "Removing MCP server registration..."
-json_remove "mcpServers" "prompt-compactor"
+json_remove "$CLAUDE_SETTINGS" "mcpServers" "prompt-compactor"
+json_remove "$CLAUDE_JSON" "mcpServers" "prompt-compactor"
 
 # ── Remove global hooks ───────────────────────────────────────────────────────
 
