@@ -5,6 +5,7 @@ from pathlib import Path
 from .config import get_backend_config, get_max_input_tokens, get_automation_config
 from .extractor import pre_filter, is_prose
 from .chunker import estimate_tokens
+from .code_extractor import extract_skeleton
 
 logger = logging.getLogger("prompt-compactor.client")
 
@@ -96,7 +97,15 @@ class CompactorClient:
             logger.error(f"Model call failed ({prompt_name}): {type(e).__name__}: {e}")
             return None
 
-    def compress(self, text: str) -> str:
+    def outline_code(self, skeleton: str) -> str:
+        """Convert a code skeleton to natural language outlines.
+        Returns the skeleton unchanged on failure (never None or empty)."""
+        result = self._call("code_outline", skeleton, max_tokens=400)
+        if result and result.strip():
+            return result.strip()
+        return skeleton
+
+    def compress(self, text: str, language: str = "python") -> str:
         """Compress text. Returns original on failure.
 
         Tiered pipeline based on input size:
@@ -110,6 +119,17 @@ class CompactorClient:
         """
         automation = get_automation_config()
         original = text
+
+        # Code path: AST skeleton extraction, optionally NL outline via Gemma.
+        # Runs before the prose pipeline — code is never a good fit for TF-IDF.
+        if not is_prose(text):
+            skeleton = extract_skeleton(text, language)
+            if skeleton is not text:  # extract_skeleton returns original when it can't help
+                if len(skeleton.split()) > 200:
+                    return self.outline_code(skeleton)
+                return skeleton
+            return original
+
         tokens = estimate_tokens(text)
         threshold = int(automation.get("extractive_threshold", 500))
 

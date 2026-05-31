@@ -1,0 +1,4 @@
+Convert the following code skeleton into concise natural language outlines.
+For each function or method: one sentence describing what it does, its key parameters, and return value.
+Preserve all function names, class names, and type names exactly as written.
+Output only the outlined text, no preamble or commentary.

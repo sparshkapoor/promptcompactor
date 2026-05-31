@@ -13,7 +13,7 @@ def client(tmp_path):
     """CompactorClient with a real prompts directory."""
     prompts_dir = tmp_path / "prompts"
     prompts_dir.mkdir()
-    for name in ("compress", "classify", "summarize", "file_summary"):
+    for name in ("compress", "classify", "summarize", "file_summary", "code_outline"):
         (prompts_dir / f"{name}.txt").write_text(f"System prompt for {name}.")
 
     c = CompactorClient()
@@ -230,3 +230,66 @@ def test_summarize_file_strips_whitespace(client):
                       return_value=_make_completion("  trimmed description  ")):
         result = client.summarize_file("file content")
     assert result == "trimmed description"
+
+
+# ---------------------------------------------------------------------------
+# outline_code
+# ---------------------------------------------------------------------------
+
+def test_outline_code_returns_result_on_success(client):
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("greet: returns a greeting for name.")):
+        result = client.outline_code("def greet(name): ...")
+    assert result == "greet: returns a greeting for name."
+
+
+def test_outline_code_returns_skeleton_on_failure(client):
+    skeleton = "def greet(name): ..."
+    with patch.object(client.client.chat.completions, "create",
+                      side_effect=Exception("timeout")):
+        result = client.outline_code(skeleton)
+    assert result == skeleton
+
+
+def test_outline_code_returns_skeleton_on_empty_response(client):
+    skeleton = "def greet(name): ..."
+    with patch.object(client.client.chat.completions, "create",
+                      return_value=_make_completion("   ")):
+        result = client.outline_code(skeleton)
+    assert result == skeleton
+
+
+# ---------------------------------------------------------------------------
+# compress — code branch
+# ---------------------------------------------------------------------------
+
+_PY_CODE_BLOCK = "\n".join([
+    "def process(data):",
+    "    step1 = data.strip()",
+    "    step2 = step1.lower()",
+    "    step3 = step2.replace(' ', '_')",
+    "    step4 = step3.encode('utf-8')",
+    "    step5 = step4.decode('ascii', errors='ignore')",
+    "    return step5",
+])
+
+
+def test_compress_code_returns_skeleton_without_llm(client):
+    """compress() should return an AST skeleton for code input without calling the LLM."""
+    with patch.object(client.client.chat.completions, "create") as mock_create:
+        result = client.compress(_PY_CODE_BLOCK, language="python")
+    # Skeleton should be shorter and not contain body lines
+    assert len(result) < len(_PY_CODE_BLOCK)
+    assert "step1 = data.strip()" not in result
+    mock_create.assert_not_called()
+
+
+def test_compress_code_returns_original_when_extraction_fails(client):
+    """compress() returns original if skeleton extraction doesn't help."""
+    # import statements → is_prose() returns False (code branch fires)
+    # but no function/class defs → extract_skeleton returns the same object unchanged
+    src = "import os\nfrom pathlib import Path\n\nx = os.getcwd()\ny = Path(x)\n"
+    with patch.object(client.client.chat.completions, "create") as mock_create:
+        result = client.compress(src, language="python")
+    assert result == src
+    mock_create.assert_not_called()

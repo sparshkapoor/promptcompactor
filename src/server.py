@@ -15,6 +15,7 @@ from .state_manager import StateManager, VALID_TYPES
 from .chunker import chunk_text, CHARS_PER_TOKEN
 from .health import check_compactor_health
 from .config import get_state_dir
+from .code_extractor import extract_skeleton, language_for_path
 
 mcp = FastMCP("prompt-compactor")
 
@@ -146,6 +147,25 @@ def get_info() -> str:
         f"Server healthy: {healthy}\n"
         f"(Override with APFEL_MODEL or APFEL_BASE_URL env vars)"
     )
+
+
+@mcp.tool
+def compact_code(text: str, language: str = "python") -> str:
+    """Compress a code block using AST skeleton extraction, with optional NL outline.
+    Extracts function/class signatures and docstrings, drops bodies — typically 70% token reduction.
+    language: Tree-sitter language name (python, javascript, typescript, go, rust, java, c, cpp).
+    Returns the skeleton or NL outline, or original text if extraction fails or backend is down."""
+    if not text or not text.strip():
+        return text
+    skeleton = extract_skeleton(text, language)
+    if skeleton is text:
+        return text  # extraction didn't help
+    if len(skeleton.split()) > 200:
+        if not check_compactor_health():
+            return skeleton
+        result = _apfel.outline_code(skeleton)
+        return result if result and result.strip() else skeleton
+    return skeleton
 
 
 @mcp.tool

@@ -46,6 +46,7 @@ from src.chunker import CHARS_PER_TOKEN                           # noqa: E402
 from src.compactor_client import CompactorClient                           # noqa: E402
 from src.state_manager import StateManager                         # noqa: E402
 from src.health import check_compactor_health                          # noqa: E402
+from src.code_extractor import extract_skeleton, language_for_path  # noqa: E402
 
 _DAEMON_PORT = 7737
 _capture_lock = threading.Lock()
@@ -227,33 +228,11 @@ def cmd_log_edit(filepath: str) -> None:
 
 # File extensions worth summarizing (skip binaries, compiled artifacts, etc.)
 _SUMMARIZABLE_EXTENSIONS = frozenset({
-    ".py", ".sh", ".md", ".txt", ".json", ".toml", ".yaml", ".yml",
-    ".js", ".ts", ".html", ".css",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".c", ".cpp", ".h", ".hpp",
+    ".sh", ".md", ".txt", ".json", ".toml", ".yaml", ".yml", ".html", ".css",
 })
-_MAX_FILE_PREVIEW_CHARS = 3000    # char limit for non-Python previews
-_MAX_FILE_PREVIEW_HEAD = 60      # leading lines always included for .py (module docstring + imports)
-_MAX_SIGNATURES = 80             # max class/def signature lines collected from the rest of .py file
+_MAX_FILE_PREVIEW_CHARS = 3000    # char limit for non-code previews (prose/config/markup)
 _MAX_FILE_SIZE_BYTES = 5_000_000  # skip files >5MB (logs, generated assets, minified bundles)
-
-
-def _read_python_preview(f) -> str:
-    """Stream a .py file and return a structural preview for any file size.
-    Reads the first _MAX_FILE_PREVIEW_HEAD lines verbatim (docstring + imports),
-    then scans the rest for class/def signatures only — never loads the full body.
-    """
-    lines = []
-    sig_count = 0
-    for i, line in enumerate(f):
-        if i < _MAX_FILE_PREVIEW_HEAD:
-            lines.append(line)
-        elif sig_count < _MAX_SIGNATURES and (
-            line.startswith("class ") or line.startswith("def ")
-            or line.startswith("    def ") or line.startswith("    class ")
-            or line.startswith("async def ") or line.startswith("    async def ")
-        ):
-            lines.append(line)
-            sig_count += 1
-    return "".join(lines)
 
 
 def cmd_update_file_summary(filepath: str) -> None:
@@ -290,12 +269,17 @@ def cmd_update_file_summary(filepath: str) -> None:
 
     try:
         with path.open("r", encoding="utf-8", errors="replace") as f:
-            if path.suffix.lower() == ".py":
-                text = _read_python_preview(f)
-            else:
-                text = f.read(_MAX_FILE_PREVIEW_CHARS)
+            text = f.read(_MAX_FILE_PREVIEW_CHARS * 10)  # read enough for skeleton extraction
         if not text.strip():
             return
+
+        lang = language_for_path(filepath)
+        if lang:
+            # Code file: extract AST skeleton before summarizing
+            text = extract_skeleton(text, lang)
+        else:
+            # Prose/config/markup: use first _MAX_FILE_PREVIEW_CHARS chars
+            text = text[:_MAX_FILE_PREVIEW_CHARS]
 
         client = _make_client()
         summary = client.summarize_file(text)

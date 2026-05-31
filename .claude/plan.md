@@ -89,3 +89,18 @@ Four system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`, 
 - Benchmark extractive pre-filter: run `tools/bench.py` before/after to quantify quality+speed gain
 - Tune extractive `keep_ratio` (currently 0.6) based on benchmarks — may want 0.5 for longer inputs
 - Enable `quality_check: true` in config.json and measure false-positive rate (how often verify wrongly rejects good compressions)
+
+## Future Work (researched, not yet scoped)
+
+### RepoMap / PageRank Symbol Graph
+Aider-style repo-level context map. Tree-sitter scans every file for symbol definitions; builds a directed graph (file A → file B if A references a symbol defined in B); runs personalized PageRank weighted toward files in the current conversation; renders the top-ranked signatures into a configurable token budget (default ~1K tokens). Gives O(1)-token whole-repo awareness regardless of repo size.
+- Evidence: Aider uses this in production (MIT Python); Codebase-Memory (arXiv 2603.27277) shows 10x token savings vs file-based exploration, 90% of quality at 2.1x fewer tool calls
+- Implementation: py-tree-sitter + NetworkX (PageRank) + new `get_repo_map(token_budget)` MCP tool; ~300 lines
+- Dependency: `networkx` (pure Python, no GPU)
+
+### Vector DB / RAG Pipeline
+Semantic retrieval over the codebase — instead of injecting all context, retrieve only the chunks relevant to the current task. Tree-sitter-aware chunking at syntactic boundaries (not arbitrary token windows) → embed chunks → store in ChromaDB → query at session start.
+- Evidence: Cursor Dynamic Context Discovery cut agent token usage 46.9% (Jan 2026 A/B test); cAST (arXiv 2506.15655) shows syntactic boundary chunking improves retrieval quality
+- Stack: `tree-sitter-languages` (already planned) + `sentence-transformers` (local embeddings, no API) + `chromadb` (local SQLite-backed vector store)
+- New MCP tool: `retrieve_context(query, k=5)` — returns top-k semantically similar code chunks
+- Dependency: `sentence-transformers`, `chromadb`; ~400 lines including indexing daemon

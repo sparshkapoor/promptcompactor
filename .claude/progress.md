@@ -1,5 +1,17 @@
 # Progress Log
 
+## 2026-05-31 (session — code-aware compression via AST skeleton)
+- [DONE] Added `tree-sitter==0.21.3` + `tree-sitter-languages>=1.10` to pyproject.toml and requirements.txt (pinned 0.21.3 — 0.22+ broke tree-sitter-languages 1.10.x API)
+- [DONE] New `src/code_extractor.py` — `extract_skeleton(source, language)` uses Tree-sitter to extract function/class signatures + docstrings, drops bodies with `...`; ~70% token reduction; supports python/js/ts/tsx/go/rust/java/c/cpp; fallback to original on any failure
+- [DONE] New `prompts/code_outline.txt` — Gemma prompt for converting code skeletons to NL outlines (arXiv 2408.04820 technique)
+- [DONE] `CompactorClient.outline_code(skeleton)` — calls code_outline prompt, returns skeleton on failure
+- [DONE] `CompactorClient.compress()` — added code branch: `not is_prose(text)` → `extract_skeleton` → optional `outline_code` if skeleton >200 words; code no longer passed raw to Gemma
+- [DONE] `cmd_update_file_summary()` in hook_runner.py — replaced Python-only `_read_python_preview()` with `extract_skeleton()` for all Tree-sitter-supported languages; non-code files keep 3000-char truncation
+- [DONE] `compact_code(text, language)` MCP tool in server.py — explicit tool for Claude to compress code blocks
+- [DONE] Added `tests/test_code_extractor.py` (28 tests) + updated `test_compactor_client.py` (5 new tests for `outline_code` and code branch in `compress`)
+- [DONE] Future plans added to .claude/plan.md: RepoMap/PageRank graph, Vector DB/RAG pipeline
+- [VERIFIED] 196/196 tests passing
+
 ## 2026-05-31 (session — uninstall fix, relative paths, compressible ceiling)
 - [DONE] Fixed uninstall.sh: `json_remove` now takes a target path arg; removes `mcpServers.prompt-compactor` from both `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode) — mirrors install.sh dual-write logic
 - [DONE] Fixed absolute paths in progress.md: `cmd_log_edit()` in hook_runner.py now resolves `Path(filepath).resolve().relative_to(_REPO_ROOT)` before building the log entry; falls back to full path for files outside the repo
