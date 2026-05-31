@@ -43,18 +43,19 @@ Transport rule: MCP server uses stdio for Claude Code, HTTP for Ollama. Never mi
 - Switch via: `CompactorClient(model="apple-foundationmodel")` in `server.py` line 21
 
 ## Prompt Files (prompts/)
-Three system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`.
+Four system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`, `file_summary.txt`, `verify.txt`.
 
 ## Current Status
-- v0.3 — adaptive handoff compression, codebase map separation, 105/105 tests
-- Backend: Gemma 4 E4B via Ollama (128K ctx, modelfile updated), configured via config.json
-- Tests: 105/105 passing
-- Hooks: SessionStart (bounded state injection), UserPromptSubmit (auto-compact prose), PostToolUse/Edit (log edits + codebase map), Stop (turn marker — see known issues)
-- Model loading: Ollama lazy-loads on first inference, OLLAMA_KEEP_ALIVE=-1 keeps it resident; on-session-start.sh fires a background warm-up curl so model is hot before first prompt
+- v0.4 — global install, tiered compression pipeline, extractive pre-filter, quality scoring
+- Backend: Gemma 4 E4B via Ollama (128K ctx), configured via config.json
+- Tests: 168/168 passing
+- Installed globally: `~/.claude/settings.json` has `prompt-compactor` in mcpServers + all 4 hooks; launchd plists loaded
+- Compaction pipeline: short prose (<300 tok) → extractive-only (no LLM); large prose (>500 tok) → TF-IDF pre-filter → Gemma; medium → Gemma only
+- Quality check: `verify.txt` + `CompactorClient.verify()` — opt-in via `quality_check: true` in config.json
 - bench.py: `--warmup` separates cold-start from TTFT from generation; streaming measures TTFT directly
 - See .claude/progress.md for full log
 
-## Known Issues (open — fix in next session)
+## Known Issues (open)
 
 **High priority:**
 - `on-stop.sh` / Stop hook generates noise: every response turn logs "Turn completed" to progress.md; 47 of 148 entries are this string (32% noise). Dilutes injection quality and wastes Gemma's summarization budget. Fix: remove the Stop hook or make it conditional on meaningful state having changed.
@@ -78,6 +79,12 @@ Three system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`.
 - ~~Hard 400-token compression floor caused 90% loss on large state files~~ — adaptive: `max(token_budget, estimated * 0.4)`
 - ~~"5 Tools" in plan.md~~ — updated to 7 (set_model, get_info added in session 5)
 - ~~Architecture diagram referenced `apfel --serve`~~ — corrected to Ollama
+- ~~MCP server only registered per-project~~ — install.sh now does global registration
+- ~~No integration test for health check cache ordering~~ — fixed test_integration.py cache reset
+- ~~No tests for src/server.py MCP tools~~ — test_server.py covers all 7 tools (30 tests)
 
 ## Planned Enhancements
-- Multi-project state isolation
+- Multi-project state isolation (already works via SHA256 hash in get_state_dir)
+- Benchmark extractive pre-filter: run `tools/bench.py` before/after to quantify quality+speed gain
+- Tune extractive `keep_ratio` (currently 0.6) based on benchmarks — may want 0.5 for longer inputs
+- Enable `quality_check: true` in config.json and measure false-positive rate (how often verify wrongly rejects good compressions)

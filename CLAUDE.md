@@ -46,11 +46,14 @@ on it before starting work. Use the compressed version as the working prompt.
 Do NOT compact: code blocks, file contents, structured data, numbered lists, or anything
 where precision matters. Preserve those verbatim.
 
-## Current Status (2026-05-15)
+## Current Status (2026-05-30)
 - Backend: Gemma 4 E4B via Ollama — **gemma4:e4b only** (128K ctx, modelfile updated with num_ctx 131072)
-- Tests: 138/138 passing
+- Tests: 168/168 passing
 - Hooks: SessionStart (bounded inject + daemon start), UserPromptSubmit (word-count gate + compress), PostToolUse/Edit (log + codebase map), Stop (sidecar flag — edit turns only)
 - Daemon: hook_runner.py --serve on localhost:7737, started by launchd + session-start
 - State: per-session rotation, codebase.md existence-pruned, progress.md noise-gated
-- In progress: global install (plan at ~/.claude/plans/cryptic-crafting-truffle.md)
+- Global install: done — prompt-compactor in ~/.claude/settings.json (mcpServers + all 4 hooks)
+- Compaction pipeline: tiered (short→extractive-only, large→pre-filter+Gemma, medium→Gemma)
+- Quality check: CompactorClient.verify() + prompts/verify.txt — opt-in via config.json quality_check key
+- New files: src/extractor.py (TF-IDF pre-filter), prompts/verify.txt (judge prompt)
 - See .claude/progress.md for full log
