@@ -33,18 +33,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/on-stop.sh",
-            "async": true
-          }
-        ]
-      }
     ]
   }
 }

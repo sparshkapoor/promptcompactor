@@ -83,9 +83,8 @@ def test_compactor_client_summarize_returns_non_empty():
 def test_health_check_passes_with_ollama_running():
     """check_compactor_health() returns True when Ollama is up."""
     import src.health as health_module
-    from src.health import check_compactor_health
-    health_module._last_check = 0.0
-    health_module._last_result = False
+    from src.health import check_compactor_health, reset_health_cache
+    reset_health_cache()
     assert check_compactor_health("http://localhost:11434") is True
 
 
@@ -156,6 +155,21 @@ def test_hook_runner_generate_handoff_empty_state(tmp_path, monkeypatch):
     )
     assert result.returncode == 0
     assert result.stdout.strip() == ""
+
+
+# ── compact_prompt MCP tool end-to-end ───────────────────────────────────────
+
+@pytest.mark.integration
+@skip_no_ollama
+@skip_no_gemma
+def test_compact_prompt_end_to_end():
+    """compact_prompt() calls Gemma and returns a non-empty string no longer than the input."""
+    from src.server import compact_prompt
+    text = " ".join(["word"] * 50)  # 50-word prose, well above the 15-word gate
+    result = compact_prompt(text)
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert len(result.split()) <= len(text.split())
 
 
 # ── State isolation integration ───────────────────────────────────────────────

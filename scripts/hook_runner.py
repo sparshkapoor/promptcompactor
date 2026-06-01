@@ -222,8 +222,6 @@ def cmd_log_edit(filepath: str) -> None:
         entry = f"Edited {rel}"
 
     state.append("progress", entry)
-    # Set sidecar flag so on-stop knows this turn had real edits
-    (state.state_dir / ".edit_this_turn").touch()
 
 
 # File extensions worth summarizing (skip binaries, compiled artifacts, etc.)
@@ -310,22 +308,6 @@ def cmd_log_progress(message: str) -> None:
     state = _make_state()
     state.append("progress", message.strip())
 
-
-def cmd_log_turn_if_edited() -> None:
-    """Check the per-project sidecar flag; log 'Turn completed' and clear it if set.
-    Called by on-stop.sh — only logs when the turn actually had file edits."""
-    automation = get_automation_config()
-    if not automation.get("auto_progress_on_stop", True):
-        return
-
-    state = _make_state()
-    flag = state.state_dir / ".edit_this_turn"
-    if flag.exists():
-        try:
-            flag.unlink()
-        except OSError:
-            pass
-        state.append("progress", "Turn completed")
 
 
 def _is_compressible(text: str) -> bool:
@@ -498,8 +480,6 @@ def _dispatch(command: str, extra_args: list[str]) -> None:
         cmd_compress_prompt()
     elif command == "summarize-turn":
         cmd_summarize_turn()
-    elif command == "log-turn-if-edited":
-        cmd_log_turn_if_edited()
     else:
         logger.error(f"Unknown command: {command!r}")
 

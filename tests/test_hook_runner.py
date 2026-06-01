@@ -362,56 +362,8 @@ def test_compressible_borderline_40_words():
     assert hr._is_compressible(long_) is True
 
 
-# ---------------------------------------------------------------------------
-# cmd_log_turn_if_edited tests
-# ---------------------------------------------------------------------------
-
-def test_log_turn_if_edited_logs_when_flag_present(tmp_path):
-    """Appends 'Turn completed' and removes the flag when .edit_this_turn exists."""
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-    flag = state_dir / ".edit_this_turn"
-    flag.touch()
-
-    with patch("scripts.hook_runner.get_state_dir", return_value=state_dir), \
-         patch("scripts.hook_runner.get_automation_config",
-               return_value={"auto_progress_on_stop": True}):
-        hr.cmd_log_turn_if_edited()
-
-    assert not flag.exists()
-    progress = (state_dir / "progress.md").read_text()
-    assert "Turn completed" in progress
-
-
-def test_log_turn_if_edited_silent_when_no_flag(tmp_path):
-    """Does nothing when .edit_this_turn flag is absent."""
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-
-    with patch("scripts.hook_runner.get_state_dir", return_value=state_dir), \
-         patch("scripts.hook_runner.get_automation_config",
-               return_value={"auto_progress_on_stop": True}):
-        hr.cmd_log_turn_if_edited()
-
-    assert not (state_dir / "progress.md").exists()
-
-
-def test_log_turn_if_edited_respects_automation_flag(tmp_path):
-    """Skips logging when auto_progress_on_stop is False, even if flag is set."""
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-    (state_dir / ".edit_this_turn").touch()
-
-    with patch("scripts.hook_runner.get_state_dir", return_value=state_dir), \
-         patch("scripts.hook_runner.get_automation_config",
-               return_value={"auto_progress_on_stop": False}):
-        hr.cmd_log_turn_if_edited()
-
-    assert not (state_dir / "progress.md").exists()
-
-
-def test_log_edit_sets_sidecar_flag(tmp_path):
-    """cmd_log_edit creates .edit_this_turn in the state dir."""
+def test_log_edit_no_sidecar_flag(tmp_path):
+    """cmd_log_edit does NOT create a .edit_this_turn sidecar flag."""
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     src_file = tmp_path / "foo.py"
@@ -423,11 +375,4 @@ def test_log_edit_sets_sidecar_flag(tmp_path):
          patch("scripts.hook_runner._is_healthy", return_value=False):
         hr.cmd_log_edit(str(src_file))
 
-    assert (state_dir / ".edit_this_turn").exists()
-
-
-def test_dispatch_log_turn_if_edited():
-    """_dispatch routes 'log-turn-if-edited' to cmd_log_turn_if_edited."""
-    with patch("scripts.hook_runner.cmd_log_turn_if_edited") as mock:
-        hr._dispatch("log-turn-if-edited", [])
-    mock.assert_called_once()
+    assert not (state_dir / ".edit_this_turn").exists()

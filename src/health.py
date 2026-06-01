@@ -35,3 +35,10 @@ def check_compactor_health(base_url: str = "http://localhost:11434") -> bool:
     _last_check = now
     logger.warning("apfel health check failed — server may not be running")
     return False
+
+
+def reset_health_cache() -> None:
+    """Reset the health check cache. Call this in tests to avoid state bleed."""
+    global _last_check, _last_result
+    _last_check = 0.0
+    _last_result = False
