@@ -133,13 +133,11 @@ info "Registering global MCP server..."
 MCP_ENTRY="$(cat <<JSON
 {
   "prompt-compactor": {
-    "command": "$VENV/bin/python",
-    "args": ["-m", "src.server"],
-    "cwd": "$COMPACTOR_HOME",
+    "command": "/bin/bash",
+    "args": ["-c", "cd $COMPACTOR_HOME && exec $VENV/bin/python -m src.server"],
     "env": {
       "COMPACTOR_MODEL": "gemma4:e4b",
-      "COMPACTOR_BASE_URL": "http://127.0.0.1:11434/v1",
-      "PYTHONPATH": "$COMPACTOR_HOME"
+      "COMPACTOR_BASE_URL": "http://127.0.0.1:11434/v1"
     }
   }
 }
