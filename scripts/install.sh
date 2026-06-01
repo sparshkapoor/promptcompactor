@@ -83,6 +83,25 @@ command -v ollama &>/dev/null \
 
 success "System checks passed"
 
+# ── Step 1b: Patch gemma4:e4b context window ─────────────────────────────────
+
+if command -v ollama &>/dev/null && ollama list 2>/dev/null | grep -q "gemma4:e4b"; then
+    info "Patching gemma4:e4b context window to 131072..."
+    MODELFILE_TMP="$(mktemp)"
+    ollama show gemma4:e4b --modelfile > "$MODELFILE_TMP"
+    if ! grep -q "num_ctx" "$MODELFILE_TMP"; then
+        echo "PARAMETER num_ctx 131072" >> "$MODELFILE_TMP"
+        ollama create gemma4:e4b -f "$MODELFILE_TMP" &>/dev/null \
+            && success "gemma4:e4b context window set to 131072" \
+            || warn "Failed to patch gemma4:e4b modelfile"
+    else
+        success "gemma4:e4b already has num_ctx set"
+    fi
+    rm -f "$MODELFILE_TMP"
+else
+    warn "gemma4:e4b not found — run: ollama pull gemma4:e4b"
+fi
+
 # ── Step 2: Copy repo to COMPACTOR_HOME ──────────────────────────────────────────
 
 info "Installing to $COMPACTOR_HOME..."
