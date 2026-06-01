@@ -92,15 +92,53 @@ Four system prompt .txt files: `compress.txt`, `classify.txt`, `summarize.txt`, 
 
 ## Future Work (researched, not yet scoped)
 
-### RepoMap / PageRank Symbol Graph
-Aider-style repo-level context map. Tree-sitter scans every file for symbol definitions; builds a directed graph (file A → file B if A references a symbol defined in B); runs personalized PageRank weighted toward files in the current conversation; renders the top-ranked signatures into a configurable token budget (default ~1K tokens). Gives O(1)-token whole-repo awareness regardless of repo size.
-- Evidence: Aider uses this in production (MIT Python); Codebase-Memory (arXiv 2603.27277) shows 10x token savings vs file-based exploration, 90% of quality at 2.1x fewer tool calls
-- Implementation: py-tree-sitter + NetworkX (PageRank) + new `get_repo_map(token_budget)` MCP tool; ~300 lines
-- Dependency: `networkx` (pure Python, no GPU)
+### Next milestone: compress what Claude actually reads/runs (v0.5)
 
-### Vector DB / RAG Pipeline
-Semantic retrieval over the codebase — instead of injecting all context, retrieve only the chunks relevant to the current task. Tree-sitter-aware chunking at syntactic boundaries (not arbitrary token windows) → embed chunks → store in ChromaDB → query at session start.
-- Evidence: Cursor Dynamic Context Discovery cut agent token usage 46.9% (Jan 2026 A/B test); cAST (arXiv 2506.15655) shows syntactic boundary chunking improves retrieval quality
-- Stack: `tree-sitter-languages` (already planned) + `sentence-transformers` (local embeddings, no API) + `chromadb` (local SQLite-backed vector store)
-- New MCP tool: `retrieve_context(query, k=5)` — returns top-k semantically similar code chunks
-- Dependency: `sentence-transformers`, `chromadb`; ~400 lines including indexing daemon
+Three attack vectors, all buildable on existing stack. Together they cut the literal context Claude accumulates — not just incoming prompts, but tool outputs and accumulated history.
+
+**Attack 1 — MCP wrapper tools: compress tool outputs before Claude sees them (highest impact)**
+- Add `read(path)` and `bash(cmd)` MCP tools to `src/server.py`
+  - `read`: if code → `extract_skeleton()` (existing); if prose → `CompactorClient.compress()` (existing)
+  - `bash`: run command, if output >300 tokens → `CompactorClient.compress()`
+- CLAUDE.md rule: "Always use prompt-compactor's `read`/`bash` instead of built-in Read/Bash"
+- Why not PostToolUse hook: hooks can't replace tool output, only append — would double-count tokens
+- Estimated savings: ~80% on file reads (skeleton), ~70% on verbose command output
+- Effort: ~100 lines, reuses existing CompactorClient + extract_skeleton, no new deps
+
+**Attack 2 — PreCompact hook: free rolling compaction with Gemma**
+- Wire `PreCompact` hook → `hook_runner.py generate-handoff` → stdout
+- Set `autoCompactWindow: 100000` in `~/.claude/settings.json` (fires at 50% fill vs 95%)
+- More frequent + smaller compressions = less information loss per pass vs one large compaction
+- Replaces Claude API compaction calls entirely (each was a paid API call)
+- Effort: ~20 lines shell script + one settings.json change
+
+**Attack 3 — RepoMap: selective retrieval instead of reading all files**
+- Aider-style PageRank on tree-sitter symbol dependency graph
+- `get_repo_map(query?, token_budget?)` MCP tool — returns top-ranked signatures in budget
+- Claude calls this instead of reading N files to understand codebase; one 500-token call replaces 5×2500-token file reads
+- CLAUDE.md rule: "Call get_repo_map before reading files to find what's relevant"
+- Evidence: Codebase-Memory (arXiv 2603.27277) — 10x token savings, 90% quality at 2.1x fewer tool calls
+- Effort: ~300 lines, `networkx` (pure Python, no GPU), tree-sitter already installed
+- Build order: Attack 1 → Attack 2 → Attack 3
+
+**Full pipeline when complete:**
+```
+User prompt → UserPromptSubmit → Gemma compresses if >40 words
+Claude reads file → read() MCP tool → skeleton/compressed → Claude sees 400 tok not 2500
+Claude runs bash → bash() MCP tool → compressed output → Claude sees 250 tok not 1000
+Context hits 100K → PreCompact hook → Gemma summarizes → continue free
+Claude needs codebase context → get_repo_map() → 500-tok symbol graph → no file reads
+```
+
+### ContextAtlas (revisit for large repos)
+Full open-source Cursor DCD recreation: tree-sitter chunking + LanceDB vector search + SQLite FTS5 + token-aware packing + MCP server. More accurate than PageRank on large repos (100+ files) where semantic similarity beats import graph traversal.
+- **Weight:** ~300MB (LanceDB Rust binary + embedding model), background indexer daemon always running, Redis optional dep, query latency 300-800ms warm (vs 50-150ms for repo-map)
+- **Verdict:** overkill for small/medium repos; repo-map (Attack 3) gives equivalent quality at a fraction of the cost. Revisit if this project expands to monorepo-scale use cases.
+- Repo: https://github.com/codefromkarl/ContextAtlas
+
+### cavemem (consider replacing current session memory)
+More sophisticated session memory than current flat markdown files: SQLite + FTS5 + vector search, cross-IDE (Claude Code/Cursor/Gemini CLI), progressive MCP retrieval (search/timeline/get_observations), deterministic caveman compression (~75% prose reduction, lossless expand), web viewer.
+- Current state files (progress.md, codebase.md) work but have no search — `get_context()` always reads everything
+- cavemem's `search(query)` tool would let Claude retrieve only relevant past observations instead of injecting the full file
+- **Tradeoff:** adds TypeScript + SQLite dependency vs current pure-Python stack
+- Repo: https://github.com/JuliusBrussee/cavemem

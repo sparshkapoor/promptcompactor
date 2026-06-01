@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-01 (session — noise fix, architecture research, v0.5 plan)
+- [DONE] Removed Turn completed noise: deleted on-stop.sh, Stop hook entries (project + global settings), cmd_log_turn_if_edited(), .edit_this_turn sidecar flag from hook_runner.py
+- [DONE] Pruned 14 existing Turn completed entries from state/progress.md
+- [DONE] Added reset_health_cache() to src/health.py; updated test_integration.py to use it instead of poking private globals
+- [DONE] Added test_compact_prompt_end_to_end integration test (skipped without Ollama)
+- [RESEARCHED] caveman (67K stars): compresses Claude outputs — not useful for context window reduction since output tokens already spent and human readability suffers
+- [RESEARCHED] cavemem (472 stars): better session memory than current flat files — SQLite + FTS5 + vector search + cross-IDE; worth adopting later, see plan.md
+- [RESEARCHED] ContextAtlas: full open-source Cursor DCD recreation; ~300MB, background daemon, embedding model required; overkill for small repos, repo-map (PageRank) gives equivalent quality cheaper
+- [RESEARCHED] Cursor Dynamic Context Discovery: selective retrieval (don't include irrelevant files) vs compression (shrink what's included) — complementary, not competing approaches
+- [DECIDED] v0.5 target: three-attack architecture to compress literal context Claude accumulates
+  - Attack 1: read()/bash() MCP wrapper tools — compress tool outputs before Claude sees them (~100 lines, reuses existing stack)
+  - Attack 2: PreCompact hook → Gemma + autoCompactWindow: 100000 — free rolling compaction (~20 lines)
+  - Attack 3: get_repo_map() — PageRank symbol graph, selective file retrieval (~300 lines, networkx)
+- [DECIDED] True MCP proxy (intercept built-in tool outputs at transport layer) is the right architecture; MCP wrapper tools are the pragmatic approximation using CLAUDE.md preference rules
+- [NOTE] PostToolUse hook approach rejected: hooks append to context, don't replace — would double-count tokens (original + compressed both in window)
+
 ## 2026-05-31 (session — visible state/ dir, cross-project support)
 - [DONE] Changed `get_state_dir()` primary path from `~/.apfel/projects/<hash>/state/` to `<cwd>/state/` (visible in IDE, project-scoped); hash path kept as fallback when cwd is not writable
 - [DONE] Added `state/` to `.gitignore`
