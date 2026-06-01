@@ -8,7 +8,9 @@ PromptCompactor is a [Model Context Protocol (MCP)](https://modelcontextprotocol
 
 ## Why This Exists
 
-Claude Code's built-in compaction calls the Claude API — costing tokens every time the context window fills up. For long coding sessions with large codebases, compaction can happen dozens of times. PromptCompactor replaces that with a free, local alternative that also adds features the built-in doesn't have: per-file codebase maps, session handoff digests, and lifecycle hooks that automatically log what Claude did without any manual effort.
+Claude Code's built-in compaction calls the Claude API — costing tokens every time the context window fills up. For long coding sessions with large codebases, compaction can happen dozens of times. PromptCompactor replaces that with a free, local alternative that also attacks the other side of the problem: **what Claude reads**.
+
+File reads land as 2500-token walls of code. Bash output lands as 1000-token walls of text. PromptCompactor adds `read` and `bash` wrapper tools that compress output before Claude ever sees it — skeleton-extracting code files and Gemma-compressing verbose command output automatically.
 
 **Measured compaction results** (real benchmark, `gemma4:e4b`, `len//4` token estimate):
 
@@ -40,7 +42,13 @@ Claude Code's built-in compaction calls the Claude API — costing tokens every 
 ./scripts/install.sh
 ```
 
-Installs Python dependencies, registers the MCP server globally in both `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode extension), and optionally installs a launchd service to keep Ollama running in the background (macOS only).
+This is idempotent — safe to re-run after updates. It:
+
+- Copies the repo to `~/.promptcompactor` and sets up a virtualenv
+- Registers the MCP server globally in `~/.claude/settings.json` (CLI) and `~/.claude.json` (VSCode extension) using a shell wrapper that avoids `sys.path` conflicts with projects that have their own `src/` directory
+- Registers all lifecycle hooks globally
+- Patches `gemma4:e4b`'s context window to 131072 (Ollama defaults to 4096, which truncates compaction input silently)
+- Optionally installs a launchd service to keep Ollama running in the background (macOS only)
 
 ## Manual Install
 
@@ -48,11 +56,16 @@ Installs Python dependencies, registers the MCP server globally in both `~/.clau
 # Pull the model
 ollama pull gemma4:e4b
 
+# Patch the context window (critical — Ollama default is 4096)
+ollama show gemma4:e4b --modelfile > /tmp/gemma4.modelfile
+echo "PARAMETER num_ctx 131072" >> /tmp/gemma4.modelfile
+ollama create gemma4:e4b -f /tmp/gemma4.modelfile
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Register with Claude Code
-claude mcp add prompt-compactor -- python -m src.server
+# Register with Claude Code (use shell wrapper to avoid src/ path conflicts)
+claude mcp add prompt-compactor -- /bin/bash -c "cd ~/.promptcompactor && exec .venv/bin/python -m src.server"
 ```
 
 ## Verify
@@ -68,6 +81,8 @@ Run `get_info` to confirm the backend is healthy and the correct model is active
 
 | Tool | Description |
 |------|-------------|
+| `read(path)` | Read a file with automatic compression — code files are skeleton-extracted (signatures + docstrings, bodies dropped), prose files are Gemma-compressed. **Prefer over built-in Read.** |
+| `bash(cmd)` | Run a shell command with automatic output compression — output over 300 tokens is Gemma-compressed. **Prefer over built-in Bash.** |
 | `compact_prompt` | Compress a verbose prompt before sending to Claude. Skips code blocks, structured data, and anything under 15 words. |
 | `log_event` | Append a development event (progress, bug, decision, architecture) to a rotating state file. |
 | `summarize_history` | Chunk and summarize old conversation turns into a compact digest. |
@@ -80,16 +95,19 @@ Run `get_info` to confirm the backend is healthy and the correct model is active
 
 ## Lifecycle Hooks
 
-PromptCompactor ships four Claude Code lifecycle hooks that run automatically in the background:
+PromptCompactor ships five Claude Code lifecycle hooks that run automatically:
 
 | Hook | Trigger | What it does |
 |------|---------|--------------|
-| `on-session-start.sh` | Session open | Pre-warms Gemma, generates a bounded handoff digest, and injects it into the session context |
+| `on-session-start.sh` | Session open | Pre-warms Gemma, generates a bounded handoff digest, injects it into the session context |
 | `on-prompt.sh` | Every user message | Compresses verbose prose (>50 words, <40% code lines) before Claude sees it |
-| `on-edit.sh` | Every file edit | Logs the changed path to `state/progress.md` and upserts a one-line Gemma-generated summary into `state/codebase.md` |
-| `on-stop.sh` | End of each turn | Records a progress marker — but only on turns where files were actually edited, not every turn |
+| `on-edit.sh` | Every file edit | Logs the changed path to `state/progress.md` and upserts a one-line Gemma summary into `state/codebase.md` |
+| `on-stop.sh` | End of each turn | Records a progress marker — only on turns where files were actually edited |
+| `on-precompact.sh` | Context hits `autoCompactWindow` | Replaces Claude's built-in compaction with a free local Gemma call via `generate_handoff`; falls back silently if Ollama is unavailable |
 
-All hooks are asynchronous and fire-and-forget — they never block Claude's response.
+`autoCompactWindow` is set to 100,000 tokens (50% fill) so compaction fires more frequently with less to lose each pass, rather than at 95% as a last resort.
+
+All hooks except `on-precompact.sh` are asynchronous and fire-and-forget — they never block Claude's response.
 
 ---
 
@@ -104,6 +122,7 @@ MCP Server  src/server.py  (Python, FastMCP)
     │
     ├── src/compactor_client.py   — all LLM calls, single HTTP client
     ├── src/state_manager.py      — all file I/O, rotating state files
+    ├── src/code_extractor.py     — tree-sitter AST skeleton extraction
     ├── src/chunker.py            — splits large text into 128K-safe chunks
     ├── src/health.py             — cached backend health check (10s TTL)
     └── src/config.py             — config loader, env-var overrides
@@ -114,10 +133,10 @@ Ollama  localhost:11434
     │
     │ llama.cpp runtime
     ▼
-Gemma 4 E4B  (128K context window, on-device)
+Gemma 4 E4B  (128K context window patched, on-device)
 ```
 
-State files live in `state/` and rotate at 100KB (newest half kept). The MCP server communicates with Claude Code on stdout (JSON-RPC only — `print()` anywhere in `src/` corrupts the protocol). All stderr goes to logs.
+State files live in `state/` and rotate at 100KB (newest half kept). The MCP server communicates with Claude Code on stdout (JSON-RPC only — `print()` anywhere in `src/` corrupts the protocol). All logging goes to stderr.
 
 ---
 
@@ -159,11 +178,12 @@ These files are the source of truth for session handoffs. `generate_handoff` rea
 ## Known Limitations
 
 1. **Ollama required** — must be running locally (or remotely via `COMPACTOR_BASE_URL`)
-2. **Token estimation is approximate** — uses `len // 4` heuristic, not the model's actual tokenizer (±20%)
-3. **Structured data compresses poorly** — file-change logs and command output see ~2% reduction; the hook skips these automatically
-4. **Cold-start latency** — first Gemma call after a cold Ollama takes ~24s; the session-start hook pre-warms it so subsequent calls are fast (~86 tok/s on M-series)
-5. **Content filter** — Gemma occasionally refuses benign technical content; `compact_prompt` returns the original input as a fallback rather than failing
-6. **English-centric** — struggles with non-English and mixed-language content
+2. **Context window must be patched** — `install.sh` handles this, but manual installs must run the `ollama create` step or compaction input will be silently truncated at 4096 tokens
+3. **Token estimation is approximate** — uses `len // 4` heuristic, not the model's actual tokenizer (±20%)
+4. **Structured data compresses poorly** — file-change logs and command output see ~2% reduction; the hook skips these automatically
+5. **Cold-start latency** — first Gemma call after a cold Ollama takes ~24s; the session-start hook pre-warms it so subsequent calls are fast (~86 tok/s on M-series)
+6. **Content filter** — Gemma occasionally refuses benign technical content; all tools return the original input as a fallback rather than failing
+7. **English-centric** — struggles with non-English and mixed-language content
 
 ---
 
