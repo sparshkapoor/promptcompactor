@@ -1,5 +1,15 @@
 # Progress Log
 
+## 2026-06-01 (session — v0.5: MCP wrapper tools + PreCompact hook)
+- [DONE] Added `read(path)` MCP tool to src/server.py: code files → AST skeleton extraction, prose → Gemma compress; falls back to raw on failure
+- [DONE] Added `bash(cmd)` MCP tool to src/server.py: runs command via subprocess (shell=False), output >300 tokens Gemma-compressed; falls back to raw on failure
+- [DONE] Added 14 tests for read() + bash() in tests/test_server.py (208/208 total passing)
+- [DONE] Added PreCompact hook: .claude/hooks/on-precompact.sh → calls generate-handoff, routes Claude's context compaction through Gemma instead of the Claude API
+- [DONE] Set autoCompactWindow: 100000 in .claude/settings.json (fires at 50% fill, not 95%)
+- [DONE] Updated install.sh: PreCompact hook + autoCompactWindow written globally on install
+- [DONE] Updated CLAUDE.md: 8 tools listed, Tool Preference Rules section added, status updated
+- [DECIDED] Attack 3 (RepoMap/PageRank) deferred to next session — requires new src/repo_map.py (~300 lines) + networkx dep
+
 ## 2026-06-01 (session — noise fix, architecture research, v0.5 plan)
 - [DONE] Removed Turn completed noise: deleted on-stop.sh, Stop hook entries (project + global settings), cmd_log_turn_if_edited(), .edit_this_turn sidecar flag from hook_runner.py
 - [DONE] Pruned 14 existing Turn completed entries from state/progress.md

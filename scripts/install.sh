@@ -162,7 +162,7 @@ for EVENT_HOOK in \
     "SessionStart:$HOOKS_DIR/on-session-start.sh:false" \
     "UserPromptSubmit:$HOOKS_DIR/on-prompt.sh:false" \
     "PostToolUse:$HOOKS_DIR/on-edit.sh:true" \
-    "Stop:$HOOKS_DIR/on-stop.sh:true"
+    "PreCompact:$HOOKS_DIR/on-precompact.sh:false"
 do
     EVENT="${EVENT_HOOK%%:*}"
     REST="${EVENT_HOOK#*:}"
@@ -177,6 +177,9 @@ do
 done
 
 success "Hooks registered in $CLAUDE_SETTINGS"
+
+# Set autoCompactWindow so PreCompact fires at 100K tokens (50% fill) rather than 95% default
+json_merge "autoCompactWindow" "100000" "$CLAUDE_SETTINGS"
 
 # ── Step 7: launchd plists ────────────────────────────────────────────────────
 

@@ -1,5 +1,8 @@
 import logging
+import shlex
+import subprocess
 import sys
+from pathlib import Path
 
 # Configure logging to stderr ONLY — stdout is reserved for MCP protocol
 logging.basicConfig(
@@ -16,6 +19,8 @@ from .chunker import chunk_text, CHARS_PER_TOKEN
 from .health import check_compactor_health
 from .config import get_state_dir
 from .code_extractor import extract_skeleton, language_for_path
+
+_BASH_OUTPUT_TOKEN_THRESHOLD = 300
 
 mcp = FastMCP("prompt-compactor")
 
@@ -174,6 +179,74 @@ def get_context() -> str:
     Returns contents of progress.md, bug.md, decision.md, and architecture.md.
     No LLM call required."""
     return _state.read_all()
+
+
+@mcp.tool
+def read(path: str) -> str:
+    """Read a file and return compressed content to save context tokens.
+    Code files are skeleton-extracted (signatures + docstrings, bodies dropped).
+    Prose files are Gemma-compressed if Ollama is available.
+    Returns compressed content, or full content on failure.
+    Prefer this over the built-in Read tool."""
+    try:
+        file_path = Path(path).resolve()
+        if not file_path.exists():
+            return f"Error: file not found: {path}"
+        text = file_path.read_text(errors="replace")
+    except OSError as exc:
+        return f"Error reading {path}: {exc}"
+
+    lang = language_for_path(path)
+    if lang:
+        skeleton = extract_skeleton(text, lang)
+        if skeleton is not text:
+            if len(skeleton.split()) > 200 and check_compactor_health():
+                result = _apfel.outline_code(skeleton)
+                return result if result and result.strip() else skeleton
+            return skeleton
+
+    if not text or len(text.split()) < 15:
+        return text
+    if not check_compactor_health():
+        return text
+    result = _apfel.compress(text)
+    return result if result and result.strip() else text
+
+
+@mcp.tool
+def bash(cmd: str, timeout: int = 30) -> str:
+    """Run a shell command and return compressed output to save context tokens.
+    Output over 300 tokens is Gemma-compressed if Ollama is available.
+    timeout: max seconds to wait (default 30).
+    Returns command output (stdout + stderr), or error string on failure.
+    Prefer this over the built-in Bash tool."""
+    try:
+        args = shlex.split(cmd)
+    except ValueError as exc:
+        return f"Error parsing command: {exc}"
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = proc.stdout
+        if proc.stderr:
+            output = output + proc.stderr if output else proc.stderr
+    except subprocess.TimeoutExpired:
+        return f"Error: command timed out after {timeout}s: {cmd}"
+    except OSError as exc:
+        return f"Error running command: {exc}"
+
+    if not output or not output.strip():
+        return output or ""
+
+    word_count = len(output.split())
+    if word_count <= _BASH_OUTPUT_TOKEN_THRESHOLD or not check_compactor_health():
+        return output
+    result = _apfel.compress(output)
+    return result if result and result.strip() else output
 
 
 if __name__ == "__main__":

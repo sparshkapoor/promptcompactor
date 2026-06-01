@@ -1,5 +1,6 @@
 """Tests for src/server.py — MCP tool functions."""
 import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
@@ -259,3 +260,155 @@ def test_generate_handoff_truncates_when_apfel_down_large_state(mock_singletons)
     assert "truncated" in result
     char_budget = token_budget * 4
     assert result.startswith(large_narrative[:char_budget])
+
+
+# --- read() tool tests ---
+
+def test_read_missing_file_returns_error(mock_singletons):
+    from src.server import read
+    result = read("/nonexistent/path/to/file.txt")
+    assert "Error" in result
+
+
+def test_read_prose_short_passthrough(mock_singletons, tmp_path):
+    """Short prose files pass through without compression."""
+    from src.server import read
+    mock_apfel, mock_state, mock_health = mock_singletons
+    f = tmp_path / "note.txt"
+    f.write_text("hello world")
+    result = read(str(f))
+    mock_apfel.compress.assert_not_called()
+    assert result == "hello world"
+
+
+def test_read_prose_long_compressed(mock_singletons, tmp_path):
+    """Long prose files are compressed via apfel.compress."""
+    from src.server import read
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.compress.return_value = "compressed prose"
+    f = tmp_path / "note.txt"
+    f.write_text("word " * 50)
+    result = read(str(f))
+    mock_apfel.compress.assert_called_once()
+    assert result == "compressed prose"
+
+
+def test_read_prose_falls_back_when_apfel_down(mock_singletons, tmp_path):
+    """Falls back to original text when Ollama is unavailable."""
+    from src.server import read
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_health.return_value = False
+    original = "word " * 50
+    f = tmp_path / "note.txt"
+    f.write_text(original)
+    result = read(str(f))
+    mock_apfel.compress.assert_not_called()
+    assert result == original
+
+
+def test_read_code_file_extracts_skeleton(mock_singletons, tmp_path):
+    """Python files go through skeleton extraction, not raw compression."""
+    from src.server import read
+    mock_apfel, mock_state, mock_health = mock_singletons
+    f = tmp_path / "foo.py"
+    f.write_text("def greet(name):\n    '''Say hello.'''\n    return f'Hello {name}'\n")
+    result = read(str(f))
+    # Skeleton extraction should have happened; compress should NOT be called for short skeletons
+    mock_apfel.compress.assert_not_called()
+    # Skeleton should contain the signature
+    assert "greet" in result
+
+
+def test_read_returns_original_when_compress_empty(mock_singletons, tmp_path):
+    """Falls back to original if compress returns empty string."""
+    from src.server import read
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.compress.return_value = ""
+    f = tmp_path / "note.txt"
+    original = "word " * 50
+    f.write_text(original)
+    result = read(str(f))
+    assert result == original
+
+
+# --- bash() tool tests ---
+
+def test_bash_runs_command(mock_singletons):
+    from src.server import bash
+    result = bash("echo hello")
+    assert "hello" in result
+
+
+def test_bash_short_output_not_compressed(mock_singletons):
+    """Output under 300 tokens is returned as-is without calling compress."""
+    from src.server import bash
+    mock_apfel, mock_state, mock_health = mock_singletons
+    result = bash("echo hi")
+    mock_apfel.compress.assert_not_called()
+    assert "hi" in result
+
+
+def test_bash_long_output_compressed(mock_singletons):
+    """Output over 300 tokens is compressed when Ollama is available."""
+    from src.server import bash
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.compress.return_value = "compressed output"
+    # Generate a command that produces > 300 words of output
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            stdout="word " * 400,
+            stderr="",
+            returncode=0,
+        )
+        result = bash("fake-long-output-cmd")
+    mock_apfel.compress.assert_called_once()
+    assert result == "compressed output"
+
+
+def test_bash_long_output_not_compressed_when_apfel_down(mock_singletons):
+    """Long output is returned raw when Ollama is down."""
+    from src.server import bash
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_health.return_value = False
+    long_output = "word " * 400
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout=long_output, stderr="", returncode=0)
+        result = bash("fake-cmd")
+    mock_apfel.compress.assert_not_called()
+    assert result == long_output
+
+
+def test_bash_invalid_command_syntax(mock_singletons):
+    """Malformed shell syntax returns an error string."""
+    from src.server import bash
+    result = bash("echo 'unterminated")
+    assert "Error" in result
+
+
+def test_bash_nonexistent_command(mock_singletons):
+    """Running a nonexistent binary returns an error string."""
+    from src.server import bash
+    result = bash("_nonexistent_binary_xyz_")
+    assert "Error" in result
+
+
+def test_bash_stderr_included_in_output(mock_singletons):
+    """stderr is appended to stdout in the result."""
+    from src.server import bash
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="out\n", stderr="err\n", returncode=1)
+        result = bash("some-cmd")
+    assert "out" in result
+    assert "err" in result
+
+
+def test_bash_falls_back_when_compress_empty(mock_singletons):
+    """Falls back to raw output if compress returns empty string."""
+    from src.server import bash
+    mock_apfel, mock_state, mock_health = mock_singletons
+    mock_apfel.compress.return_value = ""
+    long_output = "word " * 400
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout=long_output, stderr="", returncode=0)
+        result = bash("fake-cmd")
+    assert result == long_output
