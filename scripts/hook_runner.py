@@ -428,6 +428,22 @@ def cmd_compress_prompt() -> None:
         # Print nothing — original prompt passes through untouched
 
 
+def cmd_precompact_summary() -> None:
+    """
+    Return a short extractive summary (≤150 tokens) of recent progress for the
+    PreCompact hook's systemMessage. No Gemma call — pure extractive, fast.
+    """
+    state = _make_state()
+    narrative = state.read_narrative()
+    if not narrative or narrative == "No state files yet.":
+        return
+    lines = [l.strip() for l in narrative.splitlines() if l.strip() and not l.startswith("#")]
+    snippet = " | ".join(lines[-3:])
+    if len(snippet) > 600:
+        snippet = snippet[-600:]
+    print(snippet)
+
+
 def cmd_summarize_turn() -> None:
     """
     Read conversation turn text from stdin, summarize via LLM, append to progress.md.
@@ -478,6 +494,8 @@ def _dispatch(command: str, extra_args: list[str]) -> None:
         cmd_log_progress(" ".join(extra_args))
     elif command == "compress-prompt":
         cmd_compress_prompt()
+    elif command == "precompact-summary":
+        cmd_precompact_summary()
     elif command == "summarize-turn":
         cmd_summarize_turn()
     else:

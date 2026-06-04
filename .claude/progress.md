@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-06-01 (session — autoCompactWindow phantom-no-op correction)
+- [FIXED] `autoCompactWindow` was never a recognized Claude Code setting — unknown keys are silently parsed and discarded, so setting it to 100000 did literally nothing. Compaction was always running on Claude Code's built-in ~95%-of-context-window default; the PreCompact hook rode along on that native trigger regardless of the dead key. Confirmed against official docs (code.claude.com settings.md + env-vars.md) via claude-code-guide.
+- [FIXED] Replaced it with the real, documented env var `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1–100, default ~95; "50" = fire at 50% fill ≈ 100K on a 200K model). Lives in the top-level `env` block of settings.json.
+- [DONE] Corrected all stale references: `.claude/settings.json` (env block), `scripts/install.sh:198` (json_merge now writes env var), `.claude/hooks/on-precompact.sh:3` (comment), `README.md:106/108`, `.claude/plan.md:110`.
+- [NOTE] Mid-turn vs between-turn compaction timing is UNDOCUMENTED — do not claim "it waits until the turn is done."
+- [NOTE] Second real knob discovered but not used: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (token count for compaction math, defaults to model context window).
+
 ## 2026-06-01 (session — v0.5: MCP wrapper tools + PreCompact hook)
 - [DONE] Added `read(path)` MCP tool to src/server.py: code files → AST skeleton extraction, prose → Gemma compress; falls back to raw on failure
 - [DONE] Added `bash(cmd)` MCP tool to src/server.py: runs command via subprocess (shell=False), output >300 tokens Gemma-compressed; falls back to raw on failure
